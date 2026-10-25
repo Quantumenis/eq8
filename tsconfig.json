@@ -1,0 +1,19 @@
+{
+  // Interface (renderer), cœur métier et tests : vérification de types seulement (Vite et Vitest transpilent).
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/core", "src/renderer", "src/shared", "tests", "vite.config.mts", "vitest.config.mts", "playwright.config.ts"]
+}

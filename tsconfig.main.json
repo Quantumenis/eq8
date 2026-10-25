@@ -1,0 +1,16 @@
+{
+  // Processus principal Electron et préchargement : compilés par tsc en CommonJS dans out/main.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "outDir": "out",
+    "types": ["node"]
+  },
+  "include": ["src/main", "src/shared"]
+}

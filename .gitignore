@@ -1,0 +1,20 @@
+# Dépendances et sorties de construction
+node_modules/
+out/
+dist/
+.cache/
+
+# Résultats de tests
+test-results/
+playwright-report/
+
+# Outils locaux (rendu du manuel)
+.venv/
+
+# Manuel d'origine, ses extractions et ses images : sous droit d'auteur, restent en local
+refs/
+
+# Divers
+*.log
+.DS_Store
+Thumbs.db

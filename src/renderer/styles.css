@@ -1,0 +1,291 @@
+/* Jetons de couleur : thème clair par défaut, thème sombre explicite ou selon le système. */
+:root {
+  --bg: #f4f2ee;
+  --surface: #ffffff;
+  --surface-2: #ebe8e2;
+  --border: #d4cfc6;
+  --text: #24262b;
+  --text-muted: #6a6f78;
+  --sheet: #ffffff;
+  --sheet-border: #c9c3b8;
+  --logo-bg: #2b2f36;
+  --accent-quilt: #2f6fb3;
+  --accent-block: #e0a526;
+  --accent-image: #3e9a63;
+  --accent: var(--accent-quilt);
+  --focus: #1f5fa8;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1d2026;
+  --surface: #262a31;
+  --surface-2: #2f343c;
+  --border: #3d434d;
+  --text: #e7e8ea;
+  --text-muted: #a0a6b0;
+  --sheet: #30353d;
+  --sheet-border: #4a515c;
+  --logo-bg: #3a404a;
+  --accent-quilt: #5a9be0;
+  --accent-block: #f0bd4f;
+  --accent-image: #5cc185;
+  --focus: #8ab8ee;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --bg: #1d2026;
+    --surface: #262a31;
+    --surface-2: #2f343c;
+    --border: #3d434d;
+    --text: #e7e8ea;
+    --text-muted: #a0a6b0;
+    --sheet: #30353d;
+    --sheet-border: #4a515c;
+    --logo-bg: #3a404a;
+    --accent-quilt: #5a9be0;
+    --accent-block: #f0bd4f;
+    --accent-image: #5cc185;
+    --focus: #8ab8ee;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* Code couleur par plan de travail */
+.app[data-worktable="quilt"] {
+  --accent: var(--accent-quilt);
+}
+.app[data-worktable="block"] {
+  --accent: var(--accent-block);
+}
+.app[data-worktable="image"] {
+  --accent: var(--accent-image);
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100%;
+}
+
+/* Barre du haut */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.project-name {
+  color: var(--text-muted);
+}
+
+.project-name::before {
+  content: "— ";
+}
+
+.worktable-switch {
+  display: flex;
+  gap: 6px;
+}
+
+.worktable-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.worktable-button--quilt {
+  --wt: var(--accent-quilt);
+}
+.worktable-button--block {
+  --wt: var(--accent-block);
+}
+.worktable-button--image {
+  --wt: var(--accent-image);
+}
+
+.worktable-button svg {
+  color: var(--wt);
+}
+
+.worktable-button[aria-pressed="true"] {
+  background: var(--wt);
+  border-color: var(--wt);
+  color: #fff;
+}
+
+.worktable-button[aria-pressed="true"] svg {
+  color: #fff;
+}
+
+/* Ruban */
+.ribbon {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
+  background: var(--surface);
+  border-bottom: 3px solid var(--accent);
+}
+
+.ribbon-tab {
+  padding: 7px 14px 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  border-radius: 4px 4px 0 0;
+}
+
+.ribbon-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Corps : palette + plan de travail */
+.body {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 0;
+}
+
+.palette {
+  padding: 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: auto;
+}
+
+.palette-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.palette-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.worktable {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.worktable-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(520px, 90%);
+  padding: 40px 32px;
+  text-align: center;
+  background: var(--sheet);
+  border: 1px solid var(--sheet-border);
+  border-top: 4px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+
+.worktable-icon {
+  color: var(--accent);
+}
+
+.worktable-icon svg {
+  width: 56px;
+  height: 56px;
+}
+
+/* Barre d'état */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.statusbar-spacer {
+  flex: 1;
+}
+
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.theme-switch button {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.theme-switch button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
