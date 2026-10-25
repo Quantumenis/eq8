@@ -27,3 +27,12 @@ export function toInches(value: number, unit: DisplayUnit): number {
 export function fromInches(inches: number, unit: DisplayUnit): number {
   return unit === "in" ? inches : inchesToCm(inches);
 }
+
+/** Longueur lisible en français : « 6 po », « 15,24 cm » (virgule décimale, zéros inutiles supprimés). */
+export function formatLength(inches: number, unit: DisplayUnit, maxDecimals = 2): string {
+  const value = fromInches(inches, unit);
+  let text = value.toFixed(maxDecimals);
+  if (text.includes(".")) text = text.replace(/0+$/, "").replace(/\.$/, "");
+  if (text === "-0") text = "0";
+  return `${text.replace(".", ",")} ${unit === "in" ? "po" : "cm"}`;
+}

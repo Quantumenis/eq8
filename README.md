@@ -2,7 +2,7 @@
 
 Logiciel de conception de quilts (patchwork) pour Windows : dessin de blocs, dispositions, bordures, tissus, patrons imprimés à l'échelle exacte.
 
-> **État : jalon M0** — le squelette de l'application s'ouvre et s'installe ; les fonctions de conception arrivent aux jalons suivants (voir `PLAN.md` et `PROGRESS.md`).
+> **État : jalon M1** — projets (`.qsp`), carnet du projet, annuler/rétablir, sauvegarde automatique et préférences sont en place ; les éditeurs (blocs, quilts, tissus) arrivent aux jalons suivants (voir `PLAN.md` et `PROGRESS.md`).
 
 ## Utiliser
 
@@ -42,9 +42,16 @@ npm run e2e:dist       # tests de l'application empaquetée et de l'exe portable
 | `tools/` | Scripts (icône, empaquetage, rendu des pages du manuel de référence) |
 | `SPEC.md`, `PLAN.md`, `PROGRESS.md` | Spécification, plan par jalons, avancement |
 
-## Limites connues (M0)
+## Données et fichiers
 
-- Les onglets du ruban sont présents mais vides : aucune fonction de conception n'est encore disponible.
-- Les menus Nouveau / Ouvrir / Ajouter au carnet sont désactivés jusqu'au jalon M1.
-- Le thème choisi est mémorisé par le stockage local de l'interface ; il passera dans les préférences du projet au M1.
+- **Projets** : `Documents\Quilt Studio\Projets\<nom>.qsp` — une archive ZIP (`project.json` + `assets/` des images, nommées par leur empreinte SHA-256). Un projet est autonome et transportable.
+- **Préférences, sauvegarde automatique, palette par défaut** : dans le dossier de données de l'application (`%APPDATA%\Quilt Studio`). La sauvegarde automatique s'écrit toutes les 2 minutes quand le projet est modifié ; après un plantage, la relance propose de restaurer.
+- Les variables d'environnement `QUILT_STUDIO_DATA_DIR`, `QUILT_STUDIO_DOCUMENTS_DIR` et `QUILT_STUDIO_AUTOSAVE_MS` redirigent ces dossiers et l'intervalle (utilisées par les tests).
+
+## Limites connues (M1)
+
+- Les onglets du ruban sont présents mais vides : le dessin, les quilts et les tissus arrivent aux jalons M2 à M5.
+- Le carnet n'a pas encore d'éléments à créer, hormis les couleurs : « Ajouter au carnet » depuis un plan de travail attend les éditeurs. Les blocs, quilts et tissus ne sont donc créés que par le code et les tests pour l'instant, et le bouton « Modifier » du carnet est désactivé.
+- Les quilts rapides, le renommage et la suppression de projets depuis l'assistant ne sont pas encore proposés.
+- Le thème choisi est mémorisé par le stockage local de l'interface (et non dans les préférences).
 - Exécutables non signés (pas de certificat de signature de code).

@@ -1,19 +1,19 @@
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import path from "node:path";
+import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { launch, makeSandbox, stubSaveChangesAnswer, type Sandbox } from "./helpers";
 
-const ROOT = path.join(__dirname, "..", "..");
-
+let sandbox: Sandbox;
 let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
-  app = await electron.launch({ args: [ROOT], cwd: ROOT });
-  page = await app.firstWindow();
-  await page.waitForSelector('[data-testid="worktable"]');
+  sandbox = makeSandbox();
+  ({ app, page } = await launch(sandbox));
 });
 
 test.afterAll(async () => {
+  await stubSaveChangesAnswer(app, 1);
   await app?.close();
+  sandbox?.dispose();
 });
 
 test("la fenêtre s'appelle Quilt Studio", async () => {

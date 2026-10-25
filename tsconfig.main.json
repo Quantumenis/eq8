@@ -12,5 +12,5 @@
     "outDir": "out",
     "types": ["node"]
   },
-  "include": ["src/main", "src/shared"]
+  "include": ["src/main", "src/shared", "src/core/project/names.ts"]
 }

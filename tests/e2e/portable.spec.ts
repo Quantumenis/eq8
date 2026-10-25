@@ -1,4 +1,5 @@
 import { _electron as electron, expect, test } from "@playwright/test";
+import { makeSandbox } from "./helpers";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -12,20 +13,31 @@ const PORTABLE = path.join(DIST, `Quilt Studio ${version}.exe`);
 const INSTALLER = path.join(DIST, `Quilt Studio Setup ${version}.exe`);
 const UNPACKED = path.join(DIST, "win-unpacked", "Quilt Studio.exe");
 
+/** Les tests n'écrivent ni dans les vrais Documents ni dans les données de l'utilisateur. */
+function sandboxEnv(sandbox: ReturnType<typeof makeSandbox>): Record<string, string> {
+  return {
+    ...(process.env as Record<string, string>),
+    QUILT_STUDIO_DATA_DIR: sandbox.dataDir,
+    QUILT_STUDIO_DOCUMENTS_DIR: sandbox.docsDir,
+  };
+}
+
 test("les deux exécutables sont produits", () => {
   expect(existsSync(PORTABLE), PORTABLE).toBe(true);
   expect(existsSync(INSTALLER), INSTALLER).toBe(true);
 });
 
 test("l'application empaquetée démarre en moins de 10 s", async () => {
+  const sandbox = makeSandbox();
   const start = Date.now();
-  const app = await electron.launch({ executablePath: UNPACKED });
+  const app = await electron.launch({ executablePath: UNPACKED, env: sandboxEnv(sandbox) });
   const page = await app.firstWindow();
   await page.waitForSelector('[data-testid="worktable"]');
   expect(Date.now() - start).toBeLessThan(10_000);
   expect(await page.title()).toContain("Quilt Studio");
   await expect(page.getByTestId("app-version")).toHaveText(`Version ${version}`);
   await app.close();
+  sandbox.dispose();
 });
 
 function powershell(command: string): string {
@@ -41,7 +53,8 @@ function quiltStudioWindowPath(): string {
 
 test("l'exe portable ouvre une fenêtre Quilt Studio", async () => {
   test.setTimeout(90_000);
-  const child = spawn(PORTABLE, [], { detached: false, stdio: "ignore" });
+  const sandbox = makeSandbox();
+  const child = spawn(PORTABLE, [], { detached: false, stdio: "ignore", env: sandboxEnv(sandbox) });
   let appPath = "";
   try {
     // Le portable s'auto-extrait dans %TEMP% puis lance l'application : on attend la fenêtre (extraction comprise).
@@ -60,5 +73,7 @@ test("l'exe portable ouvre une fenêtre Quilt Studio", async () => {
         // Le lanceur portable s'est déjà terminé avec l'application.
       }
     }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    sandbox.dispose();
   }
 });

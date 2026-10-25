@@ -1,10 +1,20 @@
-import { useEffect, useState, type ReactNode } from "react";
-import type { ThemeMode } from "../shared/api.js";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { newProject } from "../core/project/defaults";
+import { readQsp } from "../core/project/qsp";
+import type { MenuCommand, Preferences as Prefs, RecoveryInfo, ThemeMode } from "../shared/api";
+import { DialogsProvider, useDialogs } from "./components/Dialogs";
+import { Modal } from "./components/Modal";
+import { Preferences } from "./components/Preferences";
+import { ProjectHelper } from "./components/ProjectHelper";
+import { Sketchbook } from "./components/Sketchbook";
 import { fr } from "./i18n/fr";
 import { BlockIcon, ImageIcon, LogoIcon, QuiltIcon } from "./icons";
+import { createProjectActions, currentProjectName, getApi, type ProjectActions } from "./projectActions";
+import { session, useSession } from "./projectSession";
 import { useTheme } from "./useTheme";
 
 type Worktable = "quilt" | "block" | "image";
+type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "prefs" } | null;
 
 const WORKTABLES: { id: Worktable; icon: ReactNode }[] = [
   { id: "quilt", icon: <QuiltIcon /> },
@@ -13,19 +23,162 @@ const WORKTABLES: { id: Worktable; icon: ReactNode }[] = [
 ];
 
 const THEMES: ThemeMode[] = ["light", "dark", "system"];
+const DEFAULT_PREFS: Prefs = { unit: "in", maxColorings: 2, recents: [] };
+const NOTICE_MS = 6000;
 
 export function App() {
+  return (
+    <DialogsProvider>
+      <Workspace />
+    </DialogsProvider>
+  );
+}
+
+function Workspace() {
+  const dialogs = useDialogs();
+  const current = useSession();
   const [worktable, setWorktable] = useState<Worktable>("quilt");
   const [ribbonTab, setRibbonTab] = useState<Record<Worktable, number>>({ quilt: 0, block: 0, image: 0 });
   const [theme, setTheme] = useTheme();
   const [version, setVersion] = useState("");
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  const [autosaveMs, setAutosaveMs] = useState(0);
+  const [modal, setModal] = useState<ModalState>(null);
+  const [notice, setNotice] = useState("");
+  const [recovery, setRecovery] = useState<RecoveryInfo | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
 
-  useEffect(() => {
-    void window.quiltStudio?.getAppInfo().then((info) => setVersion(info.version));
+  const notify = useCallback((message: string) => {
+    setNotice(message);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(""), NOTICE_MS);
   }, []);
+
+  const actions: ProjectActions = createProjectActions(prefs, dialogs, notify);
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+
+  // Démarrage : préférences, palette par défaut, puis proposition de restauration d'une session interrompue.
+  useEffect(() => {
+    const api = getApi();
+    let cancelled = false;
+    void (async () => {
+      const [info, loadedPrefs, paletteBytes] = await Promise.all([api.getAppInfo(), api.getPreferences(), api.getDefaultPalette()]);
+      if (cancelled) return;
+      setVersion(info.version);
+      setAutosaveMs(info.autosaveMs);
+      setPrefs(loadedPrefs);
+      let palette = null;
+      try {
+        palette = paletteBytes ? readQsp(paletteBytes) : null;
+      } catch {
+        // Palette illisible : contenu d'origine.
+      }
+      session.load(newProject(palette, loadedPrefs.maxColorings), null);
+      setRecovery(await api.checkRecovery());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Titre de la fenêtre et confirmation à la fermeture : le processus principal doit connaître l'état du projet.
+  useEffect(() => {
+    void getApi().setDocumentState({ name: currentProjectName(), modified: current.modified });
+  }, [current.version, current.modified, current.filePath]);
+
+  // Sauvegarde automatique (uniquement si le projet a changé depuis la précédente).
+  useEffect(() => {
+    if (autosaveMs <= 0) return;
+    const api = getApi();
+    let lastVersion = -1;
+    let written = false;
+    const id = window.setInterval(() => {
+      if (session.modified) {
+        if (session.version === lastVersion) return;
+        lastVersion = session.version;
+        written = true;
+        void api.writeRecovery(session.toQsp(), { name: currentProjectName(), path: session.filePath });
+      } else if (written) {
+        written = false;
+        void api.clearRecovery();
+      }
+    }, autosaveMs);
+    return () => window.clearInterval(id);
+  }, [autosaveMs]);
+
+  const runCommand = useCallback(
+    (command: MenuCommand, argument?: string) => {
+      const a = actionsRef.current;
+      switch (command) {
+        case "new":
+          return setModal({ kind: "helper", tab: "create" });
+        case "open":
+          return setModal({ kind: "helper", tab: "open" });
+        case "open-recent":
+          return void (argument && a.openPath(argument));
+        case "save":
+          return void a.save();
+        case "save-as":
+          return void a.saveAs();
+        case "save-copy":
+          return void a.saveCopy();
+        case "add-to-sketchbook":
+          return notify(fr.messages.nothingToAdd);
+        case "show-sketchbook":
+          return setModal({ kind: "sketchbook" });
+        case "preferences":
+          return setModal({ kind: "prefs" });
+        case "save-default-palette":
+          return void a.saveDefaultPalette();
+        case "undo":
+        case "redo": {
+          // Dans un champ de saisie ordinaire, Ctrl+Z défait la saisie ; ailleurs (et dans la fiche, dont chaque
+          // modification est déjà une étape de l'historique), il défait le projet.
+          const el = document.activeElement;
+          const plainField = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && !el.closest("[data-project-history]");
+          if (plainField) {
+            document.execCommand(command);
+          } else {
+            if (command === "undo") session.undo();
+            else session.redo();
+          }
+        }
+      }
+    },
+    [notify],
+  );
+
+  useEffect(() => getApi().onMenuCommand(runCommand), [runCommand]);
+
+  useEffect(
+    () =>
+      getApi().onBeforeClose(() => {
+        void actionsRef.current.ensureSaved().then(async (ok) => {
+          if (ok) await getApi().confirmClose();
+        });
+      }),
+    [],
+  );
+
+  const updatePrefs = useCallback(async (patch: Partial<Pick<Prefs, "unit" | "maxColorings">>) => {
+    setPrefs((current) => ({ ...current, ...patch })); // affichage immédiat, confirmé par le processus principal ensuite
+    setPrefs(await getApi().setPreferences(patch));
+  }, []);
+
+  const resetPrefs = useCallback(
+    async (alsoPalette: boolean) => {
+      setPrefs(await getApi().resetPreferences(alsoPalette));
+      notify(fr.prefs.restored);
+    },
+    [notify],
+  );
 
   const tabs = fr.ribbon[worktable];
   const activeTab = ribbonTab[worktable];
+  const name = currentProjectName();
 
   return (
     <div className="app" data-worktable={worktable}>
@@ -33,10 +186,50 @@ export function App() {
         <div className="brand">
           <LogoIcon />
           <span className="brand-name">{fr.app.name}</span>
-          <span className="project-name" data-testid="project-name">
-            {fr.app.untitled}
-          </span>
+          <button
+            type="button"
+            className="project-name"
+            data-testid="project-name"
+            title={fr.project.nameButtonTitle}
+            onClick={() => setModal({ kind: "helper", tab: "create" })}
+          >
+            {name}
+            {current.modified ? " *" : ""}
+          </button>
         </div>
+
+        <div className="project-tools" role="toolbar" aria-label={fr.project.toolbar}>
+          <button type="button" className="btn btn--small" data-testid="tool-save" disabled={!current.modified} onClick={() => void actions.save()}>
+            {fr.project.save}
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            data-testid="tool-undo"
+            disabled={!current.canUndo}
+            title={fr.project.undoTitle(current.undoLabel)}
+            onClick={() => session.undo()}
+          >
+            {fr.project.undo}
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            data-testid="tool-redo"
+            disabled={!current.canRedo}
+            title={fr.project.redoTitle(current.redoLabel)}
+            onClick={() => session.redo()}
+          >
+            {fr.project.redo}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-sketchbook" onClick={() => setModal({ kind: "sketchbook" })}>
+            {fr.project.sketchbook}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-add" onClick={() => runCommand("add-to-sketchbook")}>
+            {fr.project.addToSketchbook}
+          </button>
+        </div>
+
         <div className="worktable-switch" role="group" aria-label="Plans de travail">
           {WORKTABLES.map(({ id, icon }) => (
             <button
@@ -85,8 +278,11 @@ export function App() {
       </div>
 
       <footer className="statusbar">
-        <span>{fr.status.ready}</span>
-        <span>{fr.status.units}</span>
+        <span data-testid="save-state">{current.modified ? fr.status.modified : fr.status.saved}</span>
+        <span data-testid="units">{fr.status.units(prefs.unit)}</span>
+        <span className="statusbar-notice" role="status" aria-live="polite" data-testid="notice">
+          {notice || fr.status.ready}
+        </span>
         <span className="statusbar-spacer" />
         <span className="theme-switch" role="group" aria-label={fr.status.theme}>
           {fr.status.theme} :
@@ -104,6 +300,61 @@ export function App() {
         </span>
         {version && <span data-testid="app-version">{fr.status.version(version)}</span>}
       </footer>
+
+      {modal?.kind === "helper" && <ProjectHelper actions={actions} initialTab={modal.tab} onClose={() => setModal(null)} />}
+      {modal?.kind === "sketchbook" && <Sketchbook unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} onClose={() => setModal(null)} />}
+      {modal?.kind === "prefs" && (
+        <Preferences
+          prefs={prefs}
+          onChange={updatePrefs}
+          onReset={resetPrefs}
+          onSavePalette={() => actions.saveDefaultPalette()}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {recovery && (
+        <Modal
+          title={fr.dialogs.recoveryTitle}
+          size="narrow"
+          testId="recovery-dialog"
+          // Échap repousse la décision sans rien supprimer : la sauvegarde sera reproposée au prochain démarrage.
+          onClose={() => setRecovery(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn"
+                data-testid="recovery-ignore"
+                onClick={() => {
+                  void actions.ignoreRecovery();
+                  setRecovery(null);
+                }}
+              >
+                {fr.dialogs.recoveryIgnore}
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                data-autofocus
+                data-testid="recovery-restore"
+                onClick={() => {
+                  void actions.restoreRecovery(recovery);
+                  setRecovery(null);
+                }}
+              >
+                {fr.dialogs.recoveryRestore}
+              </button>
+            </>
+          }
+        >
+          <p className="dialog-message">
+            {fr.dialogs.recoveryText(
+              recovery.name,
+              new Date(recovery.savedAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" }),
+            )}
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }
