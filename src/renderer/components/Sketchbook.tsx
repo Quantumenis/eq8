@@ -49,10 +49,12 @@ interface Props {
   notify: (message: string) => void;
   /** Appelée après chaque ajout au carnet : « Ajouter au carnet » enregistre le projet. */
   onAdded: () => Promise<void>;
+  /** « Modifier » un bloc du carnet : ouvre son dessin dans le plan Bloc. */
+  onEditBlock: (id: Id) => void;
   onClose: () => void;
 }
 
-export function Sketchbook({ unit, notify, onAdded, onClose }: Props) {
+export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Props) {
   const session = useSession();
   const dialogs = useDialogs();
   const project = session.project;
@@ -245,7 +247,14 @@ export function Sketchbook({ unit, notify, onAdded, onClose }: Props) {
             </div>
           )}
           <span className="modal-footer-spacer" />
-          <button type="button" className="btn" disabled title={fr.sketchbook.editUnavailable}>
+          <button
+            type="button"
+            className="btn"
+            data-testid="edit-item"
+            disabled={!(list === "blocks" && selected)}
+            title={list === "blocks" ? undefined : fr.sketchbook.editUnavailable}
+            onClick={() => selected && onEditBlock(selected.id)}
+          >
             {fr.sketchbook.edit}
           </button>
           <button type="button" className="btn" data-testid="remove-item" disabled={!selected} onClick={() => void remove()}>

@@ -6,9 +6,12 @@ import { DialogsProvider, useDialogs } from "./components/Dialogs";
 import { Modal } from "./components/Modal";
 import { Preferences } from "./components/Preferences";
 import { ProjectHelper } from "./components/ProjectHelper";
+import { BlockWorkspace } from "./components/BlockWorkspace";
 import { Sketchbook } from "./components/Sketchbook";
 import { fr } from "./i18n/fr";
 import { BlockIcon, ImageIcon, LogoIcon, QuiltIcon } from "./icons";
+import { addCurrentBlock, editBlockFromSketchbook } from "./blockActions";
+import { blockEditor, useBlockEditor } from "./blockEditor";
 import { createProjectActions, currentProjectName, getApi, type ProjectActions } from "./projectActions";
 import { session, useSession } from "./projectSession";
 import { useTheme } from "./useTheme";
@@ -37,6 +40,7 @@ export function App() {
 function Workspace() {
   const dialogs = useDialogs();
   const current = useSession();
+  const blockDoc = useBlockEditor();
   const [worktable, setWorktable] = useState<Worktable>("quilt");
   const [ribbonTab, setRibbonTab] = useState<Record<Worktable, number>>({ quilt: 0, block: 0, image: 0 });
   const [theme, setTheme] = useTheme();
@@ -59,6 +63,10 @@ function Workspace() {
   actionsRef.current = actions;
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  const worktableRef = useRef(worktable);
+  worktableRef.current = worktable;
+  const modalRef = useRef(modal);
+  modalRef.current = modal;
 
   // Démarrage : préférences, palette par défaut, puis proposition de restauration d'une session interrompue.
   useEffect(() => {
@@ -125,8 +133,14 @@ function Workspace() {
           return void a.saveAs();
         case "save-copy":
           return void a.saveCopy();
-        case "add-to-sketchbook":
-          return notify(fr.messages.nothingToAdd);
+        case "add-to-sketchbook": {
+          if (worktableRef.current !== "block") return notify(fr.messages.nothingToAdd);
+          const outcome = addCurrentBlock();
+          if (outcome === "empty") return notify(fr.draw.emptyBlock);
+          if (outcome === "duplicate") return notify(fr.sketchbook.alreadyThere(fr.itemSingular.blocks));
+          notify(fr.sketchbook.added(fr.itemSingular.blocks));
+          return void a.afterAddToSketchbook();
+        }
         case "show-sketchbook":
           return setModal({ kind: "sketchbook" });
         case "preferences":
@@ -142,8 +156,10 @@ function Workspace() {
           if (plainField) {
             document.execCommand(command);
           } else {
-            if (command === "undo") session.undo();
-            else session.redo();
+            // Dans le plan Bloc, l'historique est celui du dessin en cours (sauf si le carnet est ouvert).
+            const target = worktableRef.current === "block" && !modalRef.current ? blockEditor : session;
+            if (command === "undo") target.undo();
+            else target.redo();
           }
         }
       }
@@ -176,6 +192,7 @@ function Workspace() {
     [notify],
   );
 
+  const history = worktable === "block" && !modal ? blockDoc : current;
   const tabs = fr.ribbon[worktable];
   const activeTab = ribbonTab[worktable];
   const name = currentProjectName();
@@ -206,9 +223,9 @@ function Workspace() {
             type="button"
             className="btn btn--small"
             data-testid="tool-undo"
-            disabled={!current.canUndo}
-            title={fr.project.undoTitle(current.undoLabel)}
-            onClick={() => session.undo()}
+            disabled={!history.canUndo}
+            title={fr.project.undoTitle(history.undoLabel)}
+            onClick={() => history.undo()}
           >
             {fr.project.undo}
           </button>
@@ -216,9 +233,9 @@ function Workspace() {
             type="button"
             className="btn btn--small"
             data-testid="tool-redo"
-            disabled={!current.canRedo}
-            title={fr.project.redoTitle(current.redoLabel)}
-            onClick={() => session.redo()}
+            disabled={!history.canRedo}
+            title={fr.project.redoTitle(history.redoLabel)}
+            onClick={() => history.redo()}
           >
             {fr.project.redo}
           </button>
@@ -254,6 +271,7 @@ function Workspace() {
             key={label}
             type="button"
             role="tab"
+            data-testid={`tab-${index}`}
             className="ribbon-tab"
             aria-selected={index === activeTab}
             onClick={() => setRibbonTab((prev) => ({ ...prev, [worktable]: index }))}
@@ -264,17 +282,28 @@ function Workspace() {
       </nav>
 
       <div className="body">
-        <aside className="palette" aria-label={fr.palette.title}>
-          <h2 className="palette-title">{tabs[activeTab]}</h2>
-          <p className="palette-empty">{fr.palette.empty}</p>
-        </aside>
+        {worktable === "block" ? (
+          <BlockWorkspace
+            tab={activeTab}
+            onTab={(index) => setRibbonTab((prev) => ({ ...prev, block: index }))}
+            unit={prefs.unit}
+            notify={notify}
+          />
+        ) : (
+          <>
+            <aside className="palette" aria-label={fr.palette.title}>
+              <h2 className="palette-title">{tabs[activeTab]}</h2>
+              <p className="palette-empty">{fr.palette.empty}</p>
+            </aside>
 
-        <main className={`worktable worktable--${worktable}`} data-testid="worktable">
-          <div className="worktable-sheet">
-            <div className="worktable-icon">{WORKTABLES.find((w) => w.id === worktable)?.icon}</div>
-            <p>{fr.placeholder[worktable]}</p>
-          </div>
-        </main>
+            <main className={`worktable worktable--${worktable}`} data-testid="worktable">
+              <div className="worktable-sheet">
+                <div className="worktable-icon">{WORKTABLES.find((w) => w.id === worktable)?.icon}</div>
+                <p>{fr.placeholder[worktable]}</p>
+              </div>
+            </main>
+          </>
+        )}
       </div>
 
       <footer className="statusbar">
@@ -302,7 +331,20 @@ function Workspace() {
       </footer>
 
       {modal?.kind === "helper" && <ProjectHelper actions={actions} initialTab={modal.tab} onClose={() => setModal(null)} />}
-      {modal?.kind === "sketchbook" && <Sketchbook unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} onClose={() => setModal(null)} />}
+      {modal?.kind === "sketchbook" && (
+        <Sketchbook
+          unit={prefs.unit}
+          notify={notify}
+          onAdded={actions.afterAddToSketchbook}
+          onEditBlock={(id) => {
+            if (!editBlockFromSketchbook(id)) return notify(fr.sketchbook.editUnavailable);
+            setModal(null);
+            setWorktable("block");
+            setRibbonTab((prev) => ({ ...prev, block: 1 }));
+          }}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal?.kind === "prefs" && (
         <Preferences
           prefs={prefs}

@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, PLAN.md et SPEC.md, puis lance le M2 ».
+> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M3 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -9,9 +9,10 @@
 |---|---|---|
 | Étape 0 — SPEC | ✅ validé | 2026-10-25 |
 | M0 — Squelette, empaquetage, outillage | ✅ terminé | 2026-10-25 |
-| **M1 — Projets, carnet, annuler/rétablir, unités** | ✅ terminé | 2026-10-26 |
-| M2 — Éditeur de blocs EasyDraw (dessin) | ⏭️ prochain | — |
-| M3 … M9 | à faire | — |
+| M1 — Projets, carnet, annuler/rétablir, unités | ✅ terminé | 2026-10-26 |
+| **M2 — Éditeur de blocs EasyDraw (dessin)** | ✅ terminé | 2026-10-26 |
+| M3 — Détection des pièces, coloration, bibliothèque de blocs | ⏭️ prochain | — |
+| M4 … M9 | à faire | — |
 
 ## M1 — fait
 
@@ -63,9 +64,56 @@
 - Le thème reste dans le stockage local de l'interface.
 - Une fois, le premier `npm run e2e:dist` suivant la construction a dépassé les 60 s d'attente de la fenêtre du portable (exe de 125 Mo fraîchement écrit, probablement analysé par l'antivirus) ; relancé aussitôt, il passe en ≈ 10 s. Si cela se reproduit, relancer le test.
 
-## Reste à faire — M2 (voir PLAN.md)
+## M2 — fait
 
-Éditeur de blocs EasyDraw : moteur de scène Canvas (zoom, défilement), barre de précision et accrochage, outils Ligne / Arc / Grille, sélection et symétries, édition des nœuds. Le plan Bloc affichera alors son premier contenu, et « Ajouter au carnet » aura enfin un élément à ajouter (il appellera `addColoredBlock` puis `afterAddToSketchbook`).
+**Cœur (`src/core/draw/`, TypeScript pur)**
+- `geometry.ts` : points, segments (`line` / `arc`), **arc de cercle défini par ses extrémités et sa flèche signée** (sagitta ; |flèche| = corde/2 = demi-cercle), centre, rayon, balayage, longueur, boîte englobante exacte, projection, sous-arc, tracé SVG exact.
+- `intersect.ts` : intersections droite-droite, droite-arc, arc-arc (avec le paramètre sur chaque segment).
+- `snap.ts` : accrochage **nœud > grille > ligne**, tolérance en pixels écran convertie en pouces selon le zoom.
+- `draft.ts` : le brouillon d'un bloc (taille, points d'accrochage, papier millimétré, options d'accrochage, segments, **repères**) et ses opérations pures : ajouter (retire les superpositions de droites, refuse ce qui sort du bloc), supprimer, déplacer, déplacer un nœud (toutes les extrémités coïncidentes suivent), régler la flèche, convertir en repères, redimensionner le bloc (le dessin suit), `toDrawing` / `fromDrawing`.
+- `nodes.ts` : partitionner en N (i/N), décaler en N ((i − ½)/N, deux demi-parts aux extrémités — Q-6.2), moitié, tiers, aux intersections (le segment et ceux qu'il croise sont coupés).
+- `transform.ts` : miroirs (G-D, H-B, deux diagonales) **par rapport aux axes du bloc**, rotation 90/180/270 exacte et angle libre, redimensionnement en % **autour du centre de la sélection**, avec ou sans « Cloner ».
+- `tools.ts` : ligne, demi-cercle (inversable), grille colonnes × lignes (lignes intérieures + côtés du rectangle hors contour), recherche du segment sous la souris. `view.ts` : zoom (niveaux fixes 10 % à 4000 %, Ctrl+molette continu), défilement, ajustement. `editor.ts` : session d'édition d'un bloc avec **son propre historique**.
+
+**Interface**
+- Plan Bloc : onglet NOUVEAU BLOC (« Nouveau bloc EasyDraw »), onglet DESSIN avec la palette d'outils **Sélection, Édition, Ligne, Arc, Grille**, la **barre de précision** (taille du bloc dans l'unité choisie, points d'accrochage H/V avec contrôle « égale ou multiple », papier millimétré + divisions, accrochage grille/nœuds/lignes, convertir en repères / effacer les repères) et la zone Canvas (haute densité de pixels, thème clair/sombre, coordonnées du pointeur, boutons − / % / + / Ajuster).
+- Sélection : clic, Maj+clic, Ctrl+A, glisser pour déplacer avec accrochage, Suppr, **barre d'espace = resélectionner le(s) dernier(s) segment(s) dessiné(s)** ; symétrie avancée dans la palette. Édition : nœuds à l'emplacement (clic), aux intersections, moitié, tiers, partitionner N, décaler N ; glisser un nœud ; **tente et point chaud** d'un arc (l'arc reste dans le bloc). Barre d'espace pendant le tracé d'un arc = l'inverse.
+- Raccourcis : Ctrl++ / Ctrl+− / Ctrl+0, Ctrl+molette, Ctrl+A, Suppr / Retour arrière, Échap.
+- **Ajouter au carnet** depuis le plan Bloc (`addColoredBlock`, doublon reconnu, bloc vide refusé, puis enregistrement du projet) ; **Modifier** un bloc du carnet reprend son dessin dans l'éditeur ; les vignettes du carnet dessinent désormais le vrai tracé (SVG, arcs exacts).
+- Annuler / Rétablir (barre, menu, Ctrl+Z) agissent sur le dessin en cours quand le plan Bloc est affiché sans le carnet ouvert, sur le projet sinon.
+
+## Vérifications M2 (toutes vertes, 2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **93/93** (8 fichiers) — dont 36 nouveaux : arc (demi-cercle, extrémités gardées, longueur et boîte à 10⁻⁹), intersections, accrochage (grille de 0,25 po, priorité nœud > grille, tolérance px → po selon le zoom), nœuds (i/5, (i − ½)/5, intersections d'un cas connu droite + arc), outils (grille 3 × 3 = 4 segments intérieurs, grille dans une grille, superpositions), transformations (rotation 90° exacte, 4 rotations = identité, miroirs, refus hors bloc), repères persistants, taille du bloc, zoom |
+| `npm run e2e` | **24/24** — M0 (5) + M1 (13) + M2 (6) : diagonale glissée = segment (0,0)-(6,6) puis annulée ; accrochage ; grille 3 × 3 et arc retourné par la barre d'espace ; sélection, miroir cloné, Ctrl+A, Suppr, partition en 5, déplacement d'un nœud ; ajout au carnet (fichier `.qsp` relu), doublon, Modifier ; annuler/rétablir par le menu. Captures `m2-bloc-100.png` et `m2-bloc-400.png` |
+| `npm run dist` | 2 exe (≈ 125 Mo chacun) |
+| `npm run e2e:dist` | 3/3 |
+
+## Décisions prises pendant M2
+
+- **Arc = arc de cercle par flèche signée** (réponse à Q-6.3 : arc de cercle, pas de Bézier). Les sous-arcs gardent leur cercle ; l'arc ne peut pas dépasser le bloc ni devenir une droite (|flèche| ≥ 10⁻⁴ po).
+- **Un nœud est une extrémité** : « ajouter un nœud » coupe le segment. La planarisation complète (intersections de tout le dessin) est celle de M3 ; « Aux intersections » coupe seulement le segment choisi et ceux qui le croisent.
+- **Symétries** : les miroirs se font par rapport aux **axes du bloc** (les diagonales exigent un bloc carré) ; la rotation et le redimensionnement se font **autour du centre de la sélection**. Un résultat qui sortirait du bloc est refusé avec un message (rien n'est modifié). Redimensionnement non uniforme : les extrémités suivent, la flèche d'un arc est proportionnelle à sa nouvelle corde (l'arc reste un arc de cercle).
+- **Pas de lignes superposées** : une droite tracée sur une droite existante est réduite à la partie nouvelle ; un arc identique est ignoré.
+- **Le brouillon n'est pas dans le projet** tant qu'on n'a pas fait « Ajouter au carnet » : il a son propre historique (illimité) et n'est **pas** couvert par la sauvegarde automatique ni la confirmation à la fermeture. Les **repères** vivent dans l'éditeur (ils survivent à « Nouveau bloc » mais pas à la fermeture de l'application).
+- **Accrochage** : grille active = toujours un point de grille (priorité à un nœud dans 10 px) ; « aux lignes » ne joue que si la grille est coupée. Le nombre de points d'accrochage doit égaler la taille (dans l'unité affichée) ou en être un multiple quand la taille est entière ; sinon le champ est signalé (on garde l'ancienne valeur à la saisie).
+- **Zoom** : 100 % = 96 px par pouce ; boutons et Ctrl+± suivent des niveaux fixes (… 300, 400, 600 …), Ctrl+molette est continu. Tant qu'on n'a pas zoomé ni défilé, le bloc suit la taille de la zone.
+- **Aucune API globale de test** : le canvas expose `data-scale`, `data-origin-x/y` et la liste des segments (`data-segments`) pour Playwright.
+
+## Reporté / limites connues (M2)
+
+- Pas de sélection au lasso, pas de copier-coller de segments (hors plan M2).
+- Les styles PolyDraw, Applique, Serendipity et l'image de décalque ne sont pas faits ; les onglets COLORATION et IMPRIMER & EXPORTER du plan Bloc sont vides jusqu'à M3 / M7.
+- Le contour du bloc n'est pas un segment ; « bloc vide » ne regarde que les segments dessinés. Le **nettoyage** des segments pendants, la détection des pièces et le test « tout est fermé » sont l'objet de M3.
+- L'ajout au carnet enregistre le dessin brut (sans nettoyage) ; M3 appliquera le nettoyage au passage à COLORATION et à l'ajout.
+- Le brouillon en cours n'est pas restauré après un plantage (voir décisions).
+
+## Reste à faire — M3 (voir PLAN.md)
+
+Planarisation (droite-droite, droite-arc, arc-arc avec tolérance), nettoyage itératif (Q-6.1) avec avertissement, extraction des faces et adjacence, onglet COLORATION (palette Tissus & Couleurs avec des couleurs, Récemment utilisés, aperçu détachable), outils Pinceau / Bombe / Pipette, colorations (flèches, « 2 sur 5 », Scinder), bibliothèque de blocs v1 (une vingtaine de blocs générés par code). Réutiliser `src/core/draw/intersect.ts` et `geometry.ts` ; la clé de pièce de `Coloring.fills` reste à définir (SPEC §5.11).
 
 ## Notes pratiques
 

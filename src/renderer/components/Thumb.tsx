@@ -1,4 +1,6 @@
 import type { AnyItem, ListKey } from "../../core/project/model";
+import { easyDrawSegments } from "../../core/draw/draft";
+import { svgPathOf } from "../../core/draw/geometry";
 import { BlockIcon, ImageIcon, QuiltIcon } from "../icons";
 
 interface ThumbProps {
@@ -29,6 +31,20 @@ export function Thumb({ list, item, size }: ThumbProps) {
     );
   }
   if ((list === "blocks" || list === "motifs" || list === "stencils") && "colorings" in item) {
+    const segments = easyDrawSegments(item.drawing);
+    if (segments) {
+      return (
+        <span className="thumb thumb--block" style={style} aria-hidden="true">
+          <svg viewBox={`-0.1 -0.1 ${item.width + 0.2} ${item.height + 0.2}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
+            <rect x="0" y="0" width={item.width} height={item.height} fill="var(--sheet)" stroke="currentColor" strokeWidth={Math.max(item.width, item.height) / 40} />
+            {segments.map((seg) => (
+              <path key={seg.id} d={svgPathOf(seg)} fill="none" stroke="currentColor" strokeWidth={Math.max(item.width, item.height) / 50} strokeLinecap="round" />
+            ))}
+          </svg>
+          {item.colorings.length > 0 && <span className="thumb-badge">{item.colorings.length}</span>}
+        </span>
+      );
+    }
     return (
       <span className="thumb thumb--block" style={style} aria-hidden="true">
         <BlockIcon size={Math.max(16, size - 12)} />
