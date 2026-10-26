@@ -13,7 +13,11 @@ export class History<T> {
   private undoStack: Entry<T>[] = [];
   private redoStack: Entry<T>[] = [];
 
-  constructor(initial: T) {
+  /** `limit` : nombre maximal d'étapes d'annulation (les plus anciennes sont oubliées) ; illimité par défaut. */
+  constructor(
+    initial: T,
+    private readonly limit = Infinity,
+  ) {
     this.present = initial;
   }
 
@@ -47,6 +51,7 @@ export class History<T> {
     const top = this.undoStack.at(-1);
     const merge = coalesceKey !== undefined && top !== undefined && top.key === coalesceKey && this.redoStack.length === 0;
     if (!merge) this.undoStack.push({ label, key: coalesceKey, state: this.present });
+    if (this.undoStack.length > this.limit) this.undoStack.shift();
     this.redoStack = [];
     this.present = next;
     return true;

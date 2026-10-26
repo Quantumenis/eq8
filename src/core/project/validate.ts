@@ -5,8 +5,11 @@ import {
   FORMAT_VERSION,
   LIST_KEYS,
   MAX_MAX_COLORINGS,
+  MAX_THREAD_WEIGHT,
   MIN_MAX_COLORINGS,
+  MIN_THREAD_WEIGHT,
   SECTION_IDS,
+  THREAD_STYLES,
   emptySketchbook,
   findBlock,
   type AssetMeta,
@@ -27,6 +30,8 @@ import {
   type SectionId,
   type Sketchbook,
   type ThreadItem,
+  type ThreadStroke,
+  type ThreadStyle,
 } from "./model";
 
 export class ProjectFormatError extends Error {
@@ -115,7 +120,12 @@ function notecard(value: unknown, path: string): Notecard {
 
 function paint(value: unknown, path: string): Paint {
   const r = record(value, path);
-  if (r.kind === "fabric") return { kind: "fabric", fabricId: text(r.fabricId, `${path}.fabricId`) };
+  if (r.kind === "fabric") {
+    const fabricId = text(r.fabricId, `${path}.fabricId`);
+    if (r.offset === undefined) return { kind: "fabric", fabricId };
+    const o = record(r.offset, `${path}.offset`);
+    return { kind: "fabric", fabricId, offset: { x: finite(o.x, `${path}.offset.x`), y: finite(o.y, `${path}.offset.y`) } };
+  }
   if (r.kind === "solid") return { kind: "solid", rgb: rgb(r.rgb, `${path}.rgb`) };
   return fail(path, "type d'habillage inconnu");
 }
@@ -126,9 +136,26 @@ function fills(value: unknown, path: string): Record<string, Paint> {
   return out;
 }
 
+function threadStroke(value: unknown, path: string): ThreadStroke {
+  const r = record(value, path);
+  const style = text(r.style, `${path}.style`);
+  if (!(THREAD_STYLES as readonly string[]).includes(style)) fail(`${path}.style`, "style de fil inconnu");
+  const weight = finite(r.weight, `${path}.weight`);
+  if (!Number.isInteger(weight) || weight < MIN_THREAD_WEIGHT || weight > MAX_THREAD_WEIGHT) {
+    fail(`${path}.weight`, `entier de ${MIN_THREAD_WEIGHT} à ${MAX_THREAD_WEIGHT} attendu`);
+  }
+  return { rgb: rgb(r.rgb, `${path}.rgb`), style: style as ThreadStyle, weight };
+}
+
 function coloring(value: unknown, path: string): Coloring {
   const r = record(value, path);
-  return { id: text(r.id, `${path}.id`), fills: fills(r.fills, `${path}.fills`) };
+  const out: Coloring = { id: text(r.id, `${path}.id`), fills: fills(r.fills, `${path}.fills`) };
+  if (r.threads !== undefined) {
+    const threads: Record<string, ThreadStroke> = {};
+    for (const [key, t] of Object.entries(record(r.threads, `${path}.threads`))) threads[key] = threadStroke(t, `${path}.threads.${key}`);
+    out.threads = threads;
+  }
+  return out;
 }
 
 function block(value: unknown, path: string): BlockItem {

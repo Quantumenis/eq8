@@ -77,3 +77,29 @@ export function displayColor(project: Project, paint: Paint | undefined): string
 export function pushRecent(recent: readonly Paint[], paint: Paint, max = 12): Paint[] {
   return [paint, ...recent.filter((p) => !samePaint(p, paint))].slice(0, max);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Coupe ciblée (SPEC §5.5, Q-5.1)
+
+/** Pas des flèches (1/16 po) et des Ctrl+flèches (1/2 po). */
+export const FUSSY_STEP = 1 / 16;
+export const FUSSY_BIG_STEP = 1 / 2;
+/** Décalage maximal (au-delà, la valeur est ramenée : un tissu se répète de toute façon). */
+const MAX_OFFSET = 1000;
+
+const roundOffset = (v: number): number => Math.round(Math.min(MAX_OFFSET, Math.max(-MAX_OFFSET, v)) * 1e9) / 1e9;
+
+/** Décale le tissu d'une pièce de (dx, dy) pouces ; sans effet si la pièce n'a pas de tissu. */
+export function fussyCut(fills: Fills, key: string, dx: number, dy: number): Fills {
+  const paint = fills[key];
+  if (!paint || paint.kind !== "fabric" || (dx === 0 && dy === 0)) return fills;
+  const x = roundOffset((paint.offset?.x ?? 0) + dx);
+  const y = roundOffset((paint.offset?.y ?? 0) + dy);
+  const next: Paint = x === 0 && y === 0 ? { kind: "fabric", fabricId: paint.fabricId } : { kind: "fabric", fabricId: paint.fabricId, offset: { x, y } };
+  return { ...fills, [key]: next };
+}
+
+/** Le décalage du tissu d'une pièce (0, 0 par défaut). */
+export function offsetOf(paint: Paint | undefined): { x: number; y: number } {
+  return paint?.kind === "fabric" && paint.offset ? paint.offset : { x: 0, y: 0 };
+}

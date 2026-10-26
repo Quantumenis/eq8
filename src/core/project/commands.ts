@@ -22,6 +22,7 @@ import {
   type SectionId,
   type Sketchbook,
 } from "./model";
+import { sortColors, type ColorSortKey, type SortDirection } from "../color/color";
 import { fabricUseCount, quiltsUsingBlock, quiltsUsingColoring, unusedBlockIds, unusedFabricIds } from "./usage";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -315,6 +316,12 @@ export function moveBefore(project: Project, list: ListKey, id: Id, beforeId: Id
   const ordered = [...rest.slice(0, at), moving, ...rest.slice(at)];
   if (ordered.every((item, i) => item === items[i])) return project;
   return withList(project, list, ordered as Sketchbook[typeof list]);
+}
+
+/** Tri automatique des couleurs (SPEC §5.10, Q-5.3) : par teinte, luminosité ou saturation, les gris à part. */
+export function sortColorsAuto(project: Project, key: ColorSortKey, direction: SortDirection): Project {
+  const sorted = sortColors(project.sketchbook.colors, (c) => c.rgb, key, direction);
+  return sortByClickOrder(project, "colors", sorted.map((c) => c.id));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

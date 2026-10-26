@@ -1,7 +1,7 @@
 // Le brouillon d'un bloc EasyDraw : sa taille, son accrochage, ses segments et ses repères.
 // Toutes les opérations sont pures (brouillon → brouillon) ; une opération sans effet renvoie le brouillon reçu.
 
-import { createId, type Id, type JsonValue, type Paint } from "../project/model";
+import { createId, type Id, type JsonValue, type Paint, type ThreadStroke } from "../project/model";
 import {
   EPS,
   boundsOf,
@@ -30,6 +30,8 @@ export interface BlockDraft {
   guides: Segment[];
   /** Coloration en cours (onglet COLORATION), par clé de pièce. */
   fills: Record<string, Paint>;
+  /** Fils des coutures de la coloration en cours, par clé de section (voir threads.ts). */
+  threads: Record<string, ThreadStroke>;
 }
 
 export const DEFAULT_BLOCK_SIZE = 6;
@@ -47,6 +49,7 @@ export function newDraft(guides: Segment[] = []): BlockDraft {
     segments: [],
     guides,
     fills: {},
+    threads: {},
   };
 }
 
@@ -78,6 +81,7 @@ export function fromDrawing(
   height: number,
   guides: Segment[],
   fills: Record<string, Paint> = {},
+  threads: Record<string, ThreadStroke> = {},
 ): BlockDraft {
   const base = {
     ...newDraft(guides),
@@ -85,6 +89,7 @@ export function fromDrawing(
     height,
     graph: { show: true, divX: Math.max(1, Math.round(width)), divY: Math.max(1, Math.round(height)) },
     fills: { ...fills },
+    threads: { ...threads },
   };
   const d = drawing as { kind?: string; segments?: Segment[] } | null;
   if (d && d.kind === "easydraw" && Array.isArray(d.segments)) {
@@ -328,4 +333,8 @@ export function cleanDrawing(draft: BlockDraft): { draft: BlockDraft; analysis: 
 
 export function setFills(draft: BlockDraft, fills: Readonly<Record<string, Paint>>): BlockDraft {
   return fills === draft.fills ? draft : { ...draft, fills: { ...fills } };
+}
+
+export function setThreads(draft: BlockDraft, threads: Readonly<Record<string, ThreadStroke>>): BlockDraft {
+  return threads === draft.threads ? draft : { ...draft, threads: { ...threads } };
 }

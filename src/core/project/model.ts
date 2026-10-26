@@ -20,13 +20,40 @@ export interface ItemBase {
   card: Notecard;
 }
 
-/** Ce qu'on applique sur une pièce : un tissu du carnet ou une couleur unie (recopiée, sans lien avec la palette). */
-export type Paint = { kind: "fabric"; fabricId: Id } | { kind: "solid"; rgb: string };
+/** Décalage du tissu dans une pièce (coupe ciblée, SPEC §5.5), en pouces. */
+export interface FabricOffset {
+  x: number;
+  y: number;
+}
 
-/** Une manière de colorer un bloc. `fills` associe une clé de pièce (M3) à son habillage. */
+/**
+ * Ce qu'on applique sur une pièce : un tissu du carnet ou une couleur unie (recopiée, sans lien avec la palette).
+ * Le tissu se pose à l'échelle réelle, calé sur le coin du bloc, décalé de `offset` s'il a été « coupé » à la main.
+ */
+export type Paint = { kind: "fabric"; fabricId: Id; offset?: FabricOffset } | { kind: "solid"; rgb: string };
+
+/** Styles de fil (Q-5.2) : continu, tirets, pointillés, point-tiret. */
+export const THREAD_STYLES = ["solid", "dash", "dot", "dashdot"] as const;
+export type ThreadStyle = (typeof THREAD_STYLES)[number];
+/** Épaisseurs de fil (Q-5.2) : de 1 (fin) à 5 (épais). */
+export const MIN_THREAD_WEIGHT = 1;
+export const MAX_THREAD_WEIGHT = 5;
+
+/** Le fil d'une couture (contour de pièce) : couleur recopiée d'un fil du carnet, style et épaisseur (SPEC §5.8). */
+export interface ThreadStroke {
+  rgb: string;
+  style: ThreadStyle;
+  weight: number;
+}
+
+/**
+ * Une manière de colorer un bloc. `fills` associe une clé de pièce (M3) à son habillage ; `threads` (facultatif)
+ * associe une clé de couture (une section du contour des pièces) à son fil.
+ */
 export interface Coloring {
   id: Id;
   fills: Record<string, Paint>;
+  threads?: Record<string, ThreadStroke>;
 }
 
 /** Bloc, motif ou pochoir : le dessin au trait est la « coloration 0 », puis une pile de colorations. */

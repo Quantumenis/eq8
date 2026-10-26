@@ -1,7 +1,8 @@
 // Contenu initial d'un nouveau projet et palette par défaut personnalisée.
 
+import { LIBRARY_FABRICS, fabricLibraryTree, instantiateLibraryFabric, type LibraryFabricDef } from "../library/fabrics";
 import type { AssetStore } from "./assets";
-import { createId, emptyNotecard, emptyProject, type ColorItem, type Project, type ThreadItem } from "./model";
+import { createId, emptyNotecard, emptyProject, type ColorItem, type FabricItem, type Project, type ThreadItem } from "./model";
 import type { LoadedProject } from "./qsp";
 
 /** Couleurs de base proposées dans un projet neuf. */
@@ -48,12 +49,19 @@ const BASE_THREADS: [string, string][] = [
   ["Fil marron", "#5d4037"],
 ];
 
-/** Projet neuf avec le contenu par défaut d'origine (les blocs et tissus arrivent avec les bibliothèques, M3 et M4). */
+/** Tissus d'un projet neuf : le premier de chaque style de la bibliothèque, plus quatre marbrés. */
+function defaultFabrics(): FabricItem[] {
+  const firsts = fabricLibraryTree().flatMap((c) => c.styles.map((s) => s.fabrics[0]));
+  const mottled = ["marbre-orange", "marbre-vert", "marbre-bleu", "marbre-violet"].map((id) => LIBRARY_FABRICS.find((f) => f.id === id));
+  return [...firsts, ...mottled].filter((d): d is LibraryFabricDef => d !== undefined).map(instantiateLibraryFabric);
+}
+
+/** Projet neuf avec le contenu par défaut d'origine : couleurs, tissus et fils (pas de blocs : voir la bibliothèque). */
 export function builtInDefaultProject(maxColorings?: number): Project {
   const project = emptyProject(maxColorings);
   const colors: ColorItem[] = BASE_COLORS.map(([name, rgb]) => ({ id: createId(), card: emptyNotecard(name), rgb }));
   const threads: ThreadItem[] = BASE_THREADS.map(([name, rgb]) => ({ id: createId(), card: emptyNotecard(name), rgb }));
-  return { ...project, sketchbook: { ...project.sketchbook, colors, threads } };
+  return { ...project, sketchbook: { ...project.sketchbook, colors, fabrics: defaultFabrics(), threads } };
 }
 
 /**
