@@ -99,10 +99,13 @@ export function QuiltSvg({ quilt }: { quilt: QuiltItem }) {
   const doc = parseDoc(quilt.layout);
   if (!doc) return null;
   const scene = buildScene(session.project, { doc, fills: quilt.fills });
-  const unit = Math.max(scene.width, scene.height);
+  const b = scene.bounds;
+  const bw = b.x1 - b.x0;
+  const bh = b.y1 - b.y0;
+  const unit = Math.max(bw, bh);
   return (
-    <svg viewBox={`${-unit / 60} ${-unit / 60} ${scene.width + unit / 30} ${scene.height + unit / 30}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-testid="quilt-thumb-svg" data-pieces={scene.pieces.length}>
-      <rect x="0" y="0" width={scene.width} height={scene.height} fill="var(--sheet)" />
+    <svg viewBox={`${b.x0 - unit / 60} ${b.y0 - unit / 60} ${bw + unit / 30} ${bh + unit / 30}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-testid="quilt-thumb-svg" data-pieces={scene.pieces.length}>
+      <rect x={b.x0} y={b.y0} width={bw} height={bh} fill="var(--sheet)" />
       {scene.pieces
         .filter((p) => !p.lineOnly)
         .map((p, i) => (

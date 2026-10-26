@@ -66,7 +66,7 @@ describe("pose des blocs (SPEC §4.2)", () => {
     let alt = placeBlock(newDraft("horizontal"), project, slotsForClick(scene0, clicked, "alternate"), ref);
     expect(Object.keys(alt.doc.set)).toHaveLength(10);
     // En damier : aucune paire d'emplacements voisins n'est remplie.
-    const rows = buildScene(project, alt).slots;
+    const rows = buildScene(project, alt).slots.filter((s) => !s.slot.border);
     for (const s of rows) {
       const right = rows.find((o) => o.slot.row === s.slot.row && o.slot.col === s.slot.col + 1);
       if (right) expect(!!s.placed).not.toBe(!!right.placed);

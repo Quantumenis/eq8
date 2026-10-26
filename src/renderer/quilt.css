@@ -135,3 +135,38 @@
   flex: 1;
   min-height: 0;
 }
+
+/* Bordures : ruban des styles et bordures automatiques. */
+.border-styles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.border-style {
+  aspect-ratio: 1;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.border-style:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.border-style[aria-pressed="true"],
+.border-style[aria-selected="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.border-style:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.check--disabled {
+  opacity: 0.55;
+}

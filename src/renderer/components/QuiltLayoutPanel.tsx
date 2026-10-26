@@ -38,7 +38,7 @@ export function KindChooser({ current, onKind }: { current: LayoutKind; onKind: 
 }
 
 /** Une taille : saisie dans la case et curseur ; un clic à côté du curseur saute d'un pas de 0,25 po (0,5 cm). */
-function SizeField({ label, value, unit, min, max, onCommit, testId }: { label: string; value: number; unit: DisplayUnit; min: number; max: number; onCommit: (inches: number) => void; testId: string }) {
+export function SizeField({ label, value, unit, min, max, onCommit, testId }: { label: string; value: number; unit: DisplayUnit; min: number; max: number; onCommit: (inches: number) => void; testId: string }) {
   const shown = Math.round(fromInches(value, unit) * 1e4) / 1e4;
   const step = unit === "in" ? SIZE_STEP : 0.5;
   const lo = fromInches(min, unit);

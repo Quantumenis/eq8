@@ -28,6 +28,7 @@ import {
   type Mat,
   type Pt,
 } from "./geom";
+import { buildBorders, type BordersResult, type Rect } from "./borders";
 import { buildLayout, type LayoutResult, type Slot, type SlotRole } from "./layout";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -96,6 +97,8 @@ export interface ScenePiece {
   layer: Layer;
   /** Identifiant de l'élément libre, s'il y en a un. */
   itemId?: Id;
+  /** Identifiant de la bordure, pour une pièce de bordure. */
+  border?: string;
   role: SlotRole | "item";
   /** Contour aplati dans le repère du centre (test de clic, découpe). */
   poly: Pt[];
@@ -130,9 +133,13 @@ export interface SceneSlot {
 }
 
 export interface Scene {
+  /** Taille du centre (hors bordures). */
   width: number;
   height: number;
   layout: LayoutResult;
+  borders: BordersResult;
+  /** Le quilt fini, bordures comprises, dans le repère du centre. */
+  bounds: Rect;
   slots: SceneSlot[];
   items: SceneItem[];
   pieces: ScenePiece[];
@@ -153,7 +160,7 @@ function blockPieces(
   ownerKey: string,
   keyPrefix: string,
   layer: Layer,
-  extra: Pick<ScenePiece, "owner" | "role" | "row" | "col"> & { itemId?: Id },
+  extra: Pick<ScenePiece, "owner" | "role" | "row" | "col"> & { itemId?: Id; border?: string },
   lineOnly: boolean,
 ): ScenePiece[] {
   const coloring = coloringId ? block.colorings.find((c) => c.id === coloringId) : undefined;
@@ -189,8 +196,9 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
   const pieces: ScenePiece[] = [];
   const slots: SceneSlot[] = [];
   const items: SceneItem[] = [];
+  const borders = buildBorders(layout.width, layout.height, doc.borders);
 
-  for (const slot of layout.slots) {
+  for (const slot of [...layout.slots, ...borders.slots]) {
     const placed = doc.set[slot.key] ?? null;
     const ref = placed ? resolveRef(project, placed) : null;
     const block = ref ? findBlock(project, ref.blockId)?.block : undefined;
@@ -208,7 +216,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
           slot.key,
           slot.key,
           1,
-          { owner: slot.key, role: slot.role, row: slot.row, col: slot.col },
+          { owner: slot.key, role: slot.role, row: slot.row, col: slot.col, ...(slot.border ? { border: slot.border } : {}) },
           false,
         ),
       );
@@ -228,6 +236,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
         row: slot.row,
         col: slot.col,
       };
+      if (slot.border) sp.border = slot.border;
       if (paint) sp.paint = paint;
       pieces.push(sp);
     }
@@ -258,7 +267,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
     );
   }
 
-  return { width: layout.width, height: layout.height, layout, slots, items, pieces };
+  return { width: layout.width, height: layout.height, layout, borders, bounds: borders.bounds, slots, items, pieces };
 }
 
 /** Les clés de coloration qui existent dans la scène (les autres viennent d'une disposition changée). */

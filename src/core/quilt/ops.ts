@@ -15,6 +15,7 @@ import {
   type QuiltDraft,
   type SetBlock,
 } from "./doc";
+import { buildBorders, defaultBorders, type BorderStyle } from "./borders";
 import { applyMat, boxOf, type Pt } from "./geom";
 import {
   buildLayout,
@@ -37,13 +38,12 @@ const withDoc = (draft: QuiltDraft, doc: QuiltDoc, fills: Fills = draft.fills): 
 /** Retire les poses et les colorations qui ne correspondent plus à un emplacement ou à une pièce existants. */
 export function prune(draft: QuiltDraft, project: Project): QuiltDraft {
   const layout = buildLayout(draft.doc.layout);
-  const slotKeys = new Set(layout.slots.filter((s) => s.frame).map((s) => s.key));
-  const allSlots = new Set(layout.slots.map((s) => s.key));
+  const borders = buildBorders(layout.width, layout.height, draft.doc.borders);
+  const slotKeys = new Set([...layout.slots, ...borders.slots].filter((s) => s.frame).map((s) => s.key));
   const set = Object.fromEntries(Object.entries(draft.doc.set).filter(([k]) => slotKeys.has(k)));
   const doc = Object.keys(set).length === Object.keys(draft.doc.set).length ? draft.doc : { ...draft.doc, set };
   const scene = buildScene(project, { doc, fills: draft.fills }, layout);
   const live = new Set(scene.pieces.map((p) => p.key));
-  void allSlots;
   const kept = Object.entries(draft.fills).filter(([k]) => live.has(k));
   const fills = kept.length === Object.keys(draft.fills).length ? draft.fills : Object.fromEntries(kept);
   return withDoc(draft, doc, fills);
@@ -52,8 +52,10 @@ export function prune(draft: QuiltDraft, project: Project): QuiltDraft {
 // ---------------------------------------------------------------------------------------------------------------
 // Disposition
 
-export function newLayout(draft: QuiltDraft, kind: LayoutKind): QuiltDraft {
-  return { doc: { v: 1, layout: defaultLayout(kind), set: {}, items: [] }, fills: {} };
+/** Une nouvelle disposition : le contenu disparaît ; les bordures aussi, sauf avec « Garder les bordures actuelles » (SPEC §3.10). */
+export function newLayout(draft: QuiltDraft, kind: LayoutKind, keepBorders = false, borderStyle?: BorderStyle): QuiltDraft {
+  const borders = keepBorders ? draft.doc.borders : defaultBorders(borderStyle);
+  return { doc: { v: 1, layout: defaultLayout(kind), set: {}, items: [], borders }, fills: {} };
 }
 
 /** Change les paramètres de la disposition ; les blocs et couleurs des emplacements qui existent encore sont gardés. */
@@ -99,9 +101,11 @@ function setBlock(project: Project, existing: SetBlock | undefined, ref: BlockRe
 
 /** Pose un bloc dans des emplacements (un clic, Ctrl : tous, Alt : un sur deux). Le bloc précédent est remplacé. */
 export function placeBlock(draft: QuiltDraft, project: Project, slotKeys: readonly string[], ref: BlockRef, keepRotation = false): QuiltDraft {
-  if (!isStandardLayout(draft.doc.layout.kind)) return draft;
   const layout = buildLayout(draft.doc.layout);
-  const ok = new Set(layout.slots.filter((s) => s.frame && s.role !== "piece").map((s) => s.key));
+  const borders = buildBorders(layout.width, layout.height, draft.doc.borders);
+  // Les bordures reçoivent des blocs dans toutes les dispositions ; le centre seulement dans les dispositions standard.
+  const centerOk = isStandardLayout(draft.doc.layout.kind);
+  const ok = new Set([...(centerOk ? layout.slots : []), ...borders.slots].filter((s) => s.frame && s.role !== "piece").map((s) => s.key));
   const set = { ...draft.doc.set };
   let fills: Record<string, Paint> | null = null;
   let changed = false;
@@ -122,11 +126,13 @@ export function placeBlock(draft: QuiltDraft, project: Project, slotKeys: readon
 
 /** Les emplacements où poser un bloc selon le clic : un seul, tous (Ctrl), un sur deux (Alt). */
 export function slotsForClick(scene: Scene, clicked: SceneSlot, mode: "one" | "all" | "alternate"): string[] {
-  const blocks = scene.slots.filter((s) => s.slot.frame && s.slot.role !== "piece");
   if (mode === "one") return [clicked.slot.key];
-  if (mode === "all") return blocks.filter((s) => s.slot.role === clicked.slot.role || s.slot.role === "block").map((s) => s.slot.key);
+  // Dans une bordure, « tous » et « un sur deux » concernent les emplacements de cette bordure.
+  const border = clicked.slot.border;
+  const blocks = scene.slots.filter((s) => s.slot.frame && s.slot.role !== "piece" && s.slot.border === border);
+  if (mode === "all") return blocks.filter((s) => border !== undefined || s.slot.role === clicked.slot.role || s.slot.role === "block").map((s) => s.slot.key);
   const parity = (clicked.slot.row + clicked.slot.col) % 2;
-  return blocks.filter((s) => s.slot.role === clicked.slot.role && (s.slot.row + s.slot.col) % 2 === parity).map((s) => s.slot.key);
+  return blocks.filter((s) => s.slot.role === clicked.slot.role && (border !== undefined ? s.slot.col % 2 === clicked.slot.col % 2 : (s.slot.row + s.slot.col) % 2 === parity)).map((s) => s.slot.key);
 }
 
 /** Efface le contenu d'un emplacement : l'emplacement redevient vide et coloriable. */
@@ -181,7 +187,7 @@ export function applySymmetry(draft: QuiltDraft, base: Readonly<Record<string, D
   let changed = false;
   for (const s of scene.slots) {
     const placed = set[s.slot.key];
-    if (!placed) continue;
+    if (!placed || s.slot.border) continue;
     const start = base[s.slot.key] ?? { rot: placed.rot, flip: placed.flip };
     const t = (s.slot.row + s.slot.col) % 2 === 0 ? even : odd;
     const next = composeD4(t, start);

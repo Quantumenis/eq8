@@ -20,6 +20,8 @@ export interface QuiltPaint {
   project: Project;
   assets: AssetStore;
   hidden: ReadonlySet<Layer>;
+  /** La bordure choisie (onglet BORDURES) : ses pièces vides sont grises et son anneau est cerné. */
+  selectedBorder: string | null;
   seams: boolean;
   palette: Palette;
   selected: ReadonlySet<Id>;
@@ -40,6 +42,8 @@ export interface QuiltPaint {
 
 const SEAM = "#24262b";
 const SELECT_GREEN = "#2fbf56";
+/** Une bordure sélectionnée, sans couleur, s'affiche en gris (SPEC §3.1). */
+const SELECTED_BORDER_GRAY = "#a3a8af";
 
 const pathCache = new WeakMap<object, Path2D>();
 function blockPath(piece: object, build: () => string): Path2D {
@@ -110,7 +114,8 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
 
   worldTransform(ctx, s);
   ctx.fillStyle = palette.sheet;
-  ctx.fillRect(0, 0, scene.width, scene.height);
+  const bounds = scene.bounds;
+  ctx.fillRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
 
   const patterns = new Map<CanvasImageSource, CanvasPattern | null>();
   const hatchPattern = ctx.createPattern(hatchTile(palette.muted), "repeat");
@@ -128,7 +133,7 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
       if (clipEdge) {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(0, 0, scene.width, scene.height);
+        ctx.rect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
         ctx.clip();
       }
       ctx.save();
@@ -140,9 +145,10 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
       if (!piece.lineOnly) {
         const fill = pieceFill(s.project, s.assets, piece.paint);
         if (!fill) {
-          ctx.fillStyle = palette.sheet;
+          const chosenBorder = piece.border !== undefined && piece.border === s.selectedBorder;
+          ctx.fillStyle = chosenBorder ? SELECTED_BORDER_GRAY : palette.sheet;
           ctx.fill(path);
-          if (hatchPattern) {
+          if (hatchPattern && !chosenBorder) {
             hatchPattern.setTransform(new DOMMatrix().scale(1 / (dpr * view.scale), 1 / (dpr * view.scale)));
             ctx.fillStyle = hatchPattern;
             ctx.fill(path);
@@ -187,6 +193,19 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
   ctx.strokeStyle = SEAM;
   ctx.lineWidth = 1.5 / view.scale;
   ctx.strokeRect(0, 0, scene.width, scene.height);
+  if (scene.borders.rings.length > 0) {
+    ctx.strokeRect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+  }
+  const ring = s.selectedBorder ? scene.borders.rings.find((r) => r.id === s.selectedBorder) : undefined;
+  if (ring) {
+    ctx.save();
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 2.5 / view.scale;
+    ctx.strokeRect(ring.outer.x0, ring.outer.y0, ring.outer.x1 - ring.outer.x0, ring.outer.y1 - ring.outer.y0);
+    ctx.setLineDash([5 / view.scale, 4 / view.scale]);
+    ctx.strokeRect(ring.inner.x0, ring.inner.y0, ring.inner.x1 - ring.inner.x0, ring.inner.y1 - ring.inner.y0);
+    ctx.restore();
+  }
 
   // Grille d'accrochage du Custom Set.
   if (s.grid) {

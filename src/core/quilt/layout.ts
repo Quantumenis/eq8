@@ -80,7 +80,7 @@ export const SIZE_STEP = 0.25;
 export const DEFAULT_MAX_BLOCKS = 24;
 export const HARD_MAX_BLOCKS = 100;
 
-export type SlotRole = "block" | "lattis" | "cornerstone" | "triangle" | "piece";
+export type SlotRole = "block" | "lattis" | "cornerstone" | "triangle" | "piece" | "border";
 
 export interface Slot {
   /** Clé stable de l'emplacement (clé des pièces du quilt : voir scene.ts). */
@@ -93,6 +93,8 @@ export interface Slot {
   /** Position dans la grille des blocs, pour « un emplacement sur deux » (Alt). */
   row: number;
   col: number;
+  /** Identifiant de la bordure à laquelle l'emplacement appartient (calque 1, hors du centre). */
+  border?: string;
 }
 
 export interface LayoutResult {

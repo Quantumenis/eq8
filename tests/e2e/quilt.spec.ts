@@ -69,7 +69,7 @@ test("Horizontal 4 × 5 : Ctrl+clic remplit tout, Alt+clic un sur deux, pinceau 
   await page.getByTestId("layout-kind-horizontal").click();
   await expect(page.getByTestId("center-size")).toHaveAttribute("data-width", "32");
   await expect(page.getByTestId("center-size")).toHaveAttribute("data-height", "40");
-  await expect(page.getByTestId("quilt-size")).toContainText("32 po × 40 po");
+  await expect(page.getByTestId("quilt-size")).toContainText("34 po × 42 po");
   await page.getByTestId("tab-3").click();
   await expect(page.getByTestId("block-thumb")).toHaveCount(2);
 
@@ -160,13 +160,13 @@ test("tailles des dispositions, bandes, One Patch et Custom Set ; ajout au carne
   await page.getByTestId("layout-kind-onepatch").click();
   await expect(page.getByTestId("center-size")).toHaveAttribute("data-width", "24");
   await expect(page.getByTestId("center-size")).toHaveAttribute("data-height", "30");
-  await expect(page.getByTestId("quilt-canvas")).toHaveAttribute("data-slots", "80");
+  await expect(page.getByTestId("quilt-canvas")).toHaveAttribute("data-slots", "84"); // 80 pièces + 4 côtés de la bordure
 
   // Custom Set : 48 × 60 po, vide.
   await page.getByTestId("tab-0").click();
   await page.getByTestId("layout-kind-custom").click();
   await expect(page.getByTestId("center-size")).toHaveAttribute("data-width", "48");
-  await expect(page.getByTestId("quilt-canvas")).toHaveAttribute("data-slots", "0");
+  await expect(page.getByTestId("quilt-canvas")).toHaveAttribute("data-slots", "4"); // les 4 côtés de la bordure
 
   // Un quilt vide ne va pas au carnet.
   await page.getByTestId("tool-add").click();
@@ -295,4 +295,117 @@ test("Symétrie : 16 états puis retour à l'état d'origine", async () => {
   }
   expect(last.equals(original)).toBe(true);
   await app.close();
+});
+
+test("Bordures : ajouter, 3 po, Losanges, poser un bloc, annuler ; cloner, supprimer, bordure automatique, fichier relu", async () => {
+  const { app, page } = await launch(sandbox);
+  await createProject(page, "Bordures");
+  await addLibraryBlocks(page, ["Nine Patch"]);
+  await page.getByTestId("worktable-quilt").click();
+  await waitForQuiltCanvas(page);
+  await page.getByTestId("layout-kind-horizontal").click(); // 32 × 40 po
+  await page.getByTestId("tab-2").click();
+
+  // Une bordure « Longue horizontale » de 1 po : le quilt fini mesure 34 × 42 po.
+  await expect(page.getByTestId("border-position")).toHaveText("1 sur 1");
+  await expect(page.getByTestId("border-style-name")).toHaveText("Longue horizontale");
+  await expect(page.getByTestId("quilt-size")).toContainText("34 po × 42 po");
+  await expect(page.getByTestId("quilt-canvas")).toHaveAttribute("data-borders", "1");
+
+  // Ajouter une bordure, 3 po (« Tous » est coché : les quatre côtés suivent), puis le style Losanges.
+  await page.getByTestId("border-add").click();
+  await expect(page.getByTestId("border-position")).toHaveText("2 sur 2");
+  await page.getByTestId("border-size-left").fill("3");
+  await page.getByTestId("border-size-left").blur();
+  await expect(page.getByTestId("border-size-bottom")).toHaveValue("3");
+  await expect(page.getByTestId("quilt-size")).toContainText("40 po × 48 po");
+  await page.getByTestId("border-style-diamonds").click();
+  await expect(page.getByTestId("border-style-name")).toHaveText("Losanges");
+  await page.getByTestId("border-nh").fill("4");
+  await page.getByTestId("border-nh").blur();
+  await page.getByTestId("border-nv").fill("5");
+  await page.getByTestId("border-nv").blur();
+  // 4 + 4 losanges en haut et en bas, 5 + 5 sur les côtés, et 4 coins : 22 emplacements de bloc ; plus les triangles.
+  const slotsBefore = Number(await page.getByTestId("quilt-canvas").getAttribute("data-slots"));
+  expect(slotsBefore).toBe(20 + 4 + (2 * (3 * 4 + 2) + 2 * (3 * 5 + 2) + 4)); // centre + 4 côtés + losanges
+
+  // Un clic sur le quilt choisit la bordure ; un clic dans le centre n'en choisit aucune.
+  await page.getByTestId("border-prev").click();
+  await expect(page.getByTestId("border-position")).toHaveText("1 sur 2");
+  await clickQuilt(page, 3.25, -2.5);
+  await expect(page.getByTestId("border-position")).toHaveText("2 sur 2");
+
+  // Poser un bloc dans un losange de la bordure (DESIGN > Poser un bloc).
+  await page.getByTestId("tab-3").click();
+  await page.getByTestId("block-thumb").first().click();
+  await clickQuilt(page, 3.25, -2.5);
+  expect(await barNumber(page, "data-set")).toBe(1);
+  await page.mouse.move(0, 0);
+  await expect(page.getByTestId("quilt-stage")).toHaveScreenshot("m6-bordures.png");
+
+  // Annuler retire le bloc ; rétablir le rend.
+  await page.getByTestId("tool-undo").click();
+  expect(await barNumber(page, "data-set")).toBe(0);
+  await page.getByTestId("tool-redo").click();
+  expect(await barNumber(page, "data-set")).toBe(1);
+
+  // Changer le style de la bordure efface son contenu (SPEC §3.9) ; Annuler le rend.
+  await page.getByTestId("tab-2").click();
+  await page.getByTestId("border-style-blocks").click();
+  expect(await barNumber(page, "data-set")).toBe(0);
+  await page.getByTestId("tool-undo").click();
+  expect(await barNumber(page, "data-set")).toBe(1);
+
+  // Cloner : style, tailles et nombres, pas le contenu.
+  await page.getByTestId("border-clone").check();
+  await page.getByTestId("border-add").click();
+  await expect(page.getByTestId("border-position")).toHaveText("3 sur 3");
+  await expect(page.getByTestId("border-style-name")).toHaveText("Losanges");
+  await expect(page.getByTestId("border-size-top")).toHaveValue("3");
+  await expect(page.getByTestId("border-nh")).toHaveValue("4");
+  expect(await barNumber(page, "data-set")).toBe(1);
+  await expect(page.getByTestId("quilt-size")).toContainText("46 po × 54 po");
+  await page.getByTestId("border-remove").click();
+  await expect(page.getByTestId("border-position")).toHaveText("2 sur 2");
+  await expect(page.getByTestId("quilt-size")).toContainText("40 po × 48 po");
+
+  // Verrouillage G+D / H+B : les côtés sont couplés deux à deux.
+  await page.getByTestId("border-lock-all").uncheck();
+  await page.getByTestId("border-lock-lr").check();
+  await page.getByTestId("border-lock-tb").check();
+  await page.getByTestId("border-size-left").fill("2");
+  await page.getByTestId("border-size-left").blur();
+  await expect(page.getByTestId("border-size-right")).toHaveValue("2");
+  await expect(page.getByTestId("border-size-top")).toHaveValue("3");
+  await page.getByTestId("border-size-top").fill("1");
+  await page.getByTestId("border-size-top").blur();
+  await expect(page.getByTestId("border-size-bottom")).toHaveValue("1");
+  await expect(page.getByTestId("quilt-size")).toContainText("38 po × 44 po");
+
+  // Les carreaux gardent leurs quatre côtés : 0 est refusé.
+  await page.getByTestId("border-style-tileSquares").click();
+  await page.getByTestId("border-size-left").fill("0");
+  await page.getByTestId("border-size-left").blur();
+  await expect(page.getByTestId("border-size-left")).toHaveValue("2"); // 0 refusé : la valeur reste
+
+  // Une bordure automatique : choisie, puis posée d'un clic sur une bordure.
+  await page.getByTestId("tab-3").click();
+  await page.getByTestId("auto-border-band").click();
+  await expect(page.getByTestId("auto-border-hint")).toBeVisible();
+  await clickQuilt(page, 3, -0.5); // la bordure intérieure (1 po)
+  await expect(page.getByTestId("notice")).toContainText("Bordure « Bande unie » posée");
+  expect(await barNumber(page, "data-fills")).toBeGreaterThan(0);
+
+  // Ajout au carnet : le fichier garde les bordures.
+  await page.getByTestId("tool-add").click();
+  await expect(page.getByTestId("notice")).toContainText("Quilt ajouté au carnet");
+  await waitForFile(sandbox.projectFile("Bordures"));
+  await page.waitForTimeout(300);
+  await app.close();
+
+  const entries = unzipSync(new Uint8Array(readFileSync(sandbox.projectFile("Bordures"))));
+  const project = JSON.parse(strFromU8(entries["project.json"] as Uint8Array)) as { sketchbook: { quilts: { layout: { borders: { style: string; sizes: Record<string, number> }[] } }[] } };
+  const borders = project.sketchbook.quilts[0]!.layout.borders;
+  expect(borders.map((b) => b.style)).toEqual(["longH", "tileSquares"]);
+  expect(borders[1]!.sizes.left).toBeGreaterThan(0);
 });

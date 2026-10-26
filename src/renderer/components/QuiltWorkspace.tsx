@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findPaletteEntry, paletteEntries, samePaint, type PaletteTab } from "../../core/draw/coloring";
 import { addToSketchbook } from "../../core/project/commands";
 import { emptyNotecard, createId, type BlockItem, type BlockListKey, type Id, type Paint } from "../../core/project/model";
+import { addBorder, insertBorder, matchCounts, removeBorder, setBorderCount, setBorderSize, setBorderStyle, type SizeLock } from "../../core/quilt/borderops";
+import { applyAutoBorder, type AutoBorder } from "../../core/quilt/borderpresets";
+import { finishedSize, type BorderSide, type BorderStyle } from "../../core/quilt/borders";
 import { CORNER_HANDLES, SIDE_HANDLES, hitHandle, isCorner, resizeByHandle, rotateByPointer, skewByPointer, handlePoint, type Handle } from "../../core/quilt/adjust";
 import { newDraft, type FreeItem, type Layer, type QuiltDraft } from "../../core/quilt/doc";
 import type { Pt } from "../../core/quilt/geom";
@@ -69,6 +72,7 @@ import { PaintSwatches, SelectionPreview } from "./ColoringPalette";
 import { useColorTools } from "./ColorTools";
 import { QuiltCanvas, DROP_MIME, type PointerInfo } from "./QuiltCanvas";
 import { KindChooser, LayoutPanel } from "./QuiltLayoutPanel";
+import { AutoBorders, BorderPanel } from "./QuiltBorderPanel";
 import { BlockSvg } from "./Thumb";
 import { pieceFill } from "../paintView";
 
@@ -156,7 +160,11 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     snapPosition: loadOption("snapPosition", true),
     snapSize: loadOption("snapSize", true),
     snapStep: loadOption("snapStep", 1 / 4),
+    keepBorders: loadOption("keepBorders", false),
+    borderStyle: loadOption<BorderStyle>("borderStyle", "longH"),
   }));
+  const [selectedBorder, setSelectedBorder] = useState<string | null>(null);
+  const [autoPreset, setAutoPreset] = useState<AutoBorder | null>(null);
   const gesture = useRef<Gesture | null>(null);
   const clipboard = useRef<FreeItem[]>([]);
   const symmetry = useRef<{ base: ReturnType<typeof orientationOf>; clicks: number; set: QuiltDraft["doc"]["set"] | null }>({ base: {}, clicks: 0, set: null });
@@ -172,6 +180,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     setSprayKeys([]);
     setFocusKey(null);
     setEdge(null);
+    setAutoPreset(null);
     symmetry.current = { base: {}, clicks: 0, set: null };
     if (next !== "adjust") setSelected([]);
     setToolState(next);
@@ -250,13 +259,18 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     }
   }, [chosenBlock, project.sketchbook.blocks]);
 
+  // Une bordure automatique choisie ne reste pas armée quand on quitte l'onglet DESIGN.
+  useEffect(() => {
+    if (tab !== 3) setAutoPreset(null);
+  }, [tab]);
+
   const execute = useCallback((label: string, change: (d: QuiltDraft) => QuiltDraft, key?: string) => editor.execute(label, change, key), [editor]);
 
   // ---- Disposition -------------------------------------------------------------------------------------------
 
   const changeLayout = (next: LayoutParams, key?: string) => execute(fr.quilt.history.layout, (d) => setLayout(d, project, next, options.maxBlocks), key ? `layout:${key}` : undefined);
   const changeKind = (kind: LayoutKind) => {
-    execute(fr.quilt.history.newLayout, (d) => newLayout(d, kind));
+    execute(fr.quilt.history.newLayout, (d) => newLayout(d, kind, options.keepBorders));
     setSelected([]);
     setLayer(1);
     if (tab === 0) onTab(1);
@@ -275,13 +289,17 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
 
   const placeAt = (world: Pt, mode: "one" | "all" | "alternate", ref: BlockRef, dropCenter = false) => {
     const sc = sceneRef.current;
-    if (layer === 1 && standard) {
+    if (layer === 1) {
+      // Les bordures reçoivent des blocs dans toutes les dispositions ; le centre, dans les dispositions standard.
       const slot = slotAtPoint(sc, world);
-      if (!slot) return notify(fr.quilt.messages.noPiece);
-      if (slot.slot.role === "piece") return notify(fr.quilt.messages.onePatchNoBlock);
-      const keys = slotsForClick(sc, slot, mode);
-      execute(fr.quilt.history.place, (d) => placeBlock(d, project, keys, ref, options.keepRotation));
-      return;
+      if (slot && (standard || slot.slot.border)) {
+        if (slot.slot.role === "piece") return notify(fr.quilt.messages.onePatchNoBlock);
+        const keys = slotsForClick(sc, slot, mode);
+        execute(fr.quilt.history.place, (d) => placeBlock(d, project, keys, ref, options.keepRotation));
+        return;
+      }
+      if (!slot && pieceAtPoint(sc, world, 1)?.border) return notify(fr.quilt.borders.noBlocksHere);
+      if (standard) return notify(fr.quilt.messages.noPiece);
     }
     if (layer === 1 && layoutKind === "onepatch") return notify(fr.quilt.messages.onePatchNoBlock);
     const found = [...project.sketchbook.blocks, ...project.sketchbook.motifs, ...project.sketchbook.stencils].find((b) => b.id === ref.blockId);
@@ -453,6 +471,12 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   const onPointer = (info: PointerInfo) => {
     if (info.kind === "leave") return setHoverSlot(null);
     if (tab !== 3) {
+      // Onglet BORDURES : un clic sur le quilt choisit la bordure.
+      if (info.kind === "down" && tab === 2) {
+        const piece = pieceAtPoint(sceneRef.current, info.world, 1);
+        if (piece?.border) setSelectedBorder(piece.border);
+        return;
+      }
       // Onglet DISPOSITION : un clic choisit la bande ; sinon rien.
       if (info.kind === "down" && tab === 1 && (layoutKind === "stripsH" || layoutKind === "stripsV")) {
         const piece = pieceAtPoint(sceneRef.current, info.world);
@@ -485,9 +509,9 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
         refresh();
         return;
       }
-      if (tool === "set" && layer === 1 && standard) {
+      if (tool === "set" && layer === 1 && !autoPreset) {
         const slot = slotAtPoint(sc, info.world);
-        setHoverSlot(slot && slot.slot.role !== "piece" ? slot.slot.key : null);
+        setHoverSlot(slot && slot.slot.role !== "piece" && (standard || slot.slot.border) ? slot.slot.key : null);
       } else if (hoverSlot) setHoverSlot(null);
       return;
     }
@@ -509,6 +533,17 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     }
 
     // down
+    if (autoPreset) {
+      // Une bordure automatique choisie : un clic sur une bordure du quilt la remplit.
+      const piece = pieceAtPoint(sc, info.world, 1);
+      if (!piece?.border) return notify(fr.quilt.borders.auto.pickBorder);
+      const id = piece.border;
+      const preset = autoPreset;
+      execute(fr.quilt.borders.history.auto, (d) => applyAutoBorder(d, project, id, preset));
+      setSelectedBorder(id);
+      notify(fr.quilt.borders.auto.applied(preset.name));
+      return;
+    }
     if (hidden.has(layer) && tool !== "tape") return notify(fr.quilt.messages.layerHidden);
     if (tool === "tape") {
       gesture.current = { kind: "tape", a: info.world, b: info.world };
@@ -565,9 +600,9 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
             updateItems(d, ids, (i) => (tool === "rotate" ? { rot: (((i.rot + 1) % 4) as 0 | 1 | 2 | 3) } : { flip: !i.flip })),
           );
         }
-        if (layer !== 1 || !standard) return;
+        if (layer !== 1) return;
         const slot = slotAtPoint(sc, info.world);
-        if (!slot) return;
+        if (!slot || !(standard || slot.slot.border)) return;
         const keys = slotsForClick(sc, slot, clickMode(info.ctrl, info.alt)).filter((k) => draft.doc.set[k]);
         return execute(fr.quilt.history.turn, (d) => turnSlots(d, keys, tool === "rotate" ? "rotate" : "mirror"));
       }
@@ -575,9 +610,9 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
         if (info.ctrl) return execute(fr.quilt.history.clear, clearQuilt);
         const item = itemAtPoint(sc, info.world, layer);
         if (item) return execute(fr.quilt.history.erase, (d) => deleteItems(d, [item.item.id]));
-        if (layer !== 1 || !standard) return;
+        if (layer !== 1) return;
         const slot = slotAtPoint(sc, info.world);
-        if (!slot) return;
+        if (!slot || !(standard || slot.slot.border)) return;
         return execute(fr.quilt.history.erase, (d) => eraseSlots(d, slotsForClick(sc, slot, clickMode(false, info.alt))));
       }
       case "symmetry": {
@@ -687,7 +722,10 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   // ---- Affichage ---------------------------------------------------------------------------------------------
 
   const layoutResult = scene.layout;
-  const finished = fr.quilt.finished(formatLength(layoutResult.width, unit, 3), formatLength(layoutResult.height, unit, 3));
+  const total = finishedSize(layoutResult.width, layoutResult.height, shownDraft.doc.borders);
+  const finished = fr.quilt.finished(formatLength(total.width, unit, 3), formatLength(total.height, unit, 3));
+  const borders = draft.doc.borders;
+  const activeBorder = borders.some((b) => b.id === selectedBorder) ? selectedBorder : (borders[borders.length - 1]?.id ?? null);
   const only = selectedItem();
   const shownOnly = only ? (shownDraft.doc.items.find((i) => i.id === only.id) ?? only) : null;
   const handles =
@@ -725,6 +763,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     project,
     assets: current.assets,
     hidden: tab === 3 ? hidden : (new Set<Layer>() as ReadonlySet<Layer>),
+    selectedBorder: tab === 2 ? activeBorder : null,
     seams,
     selected: new Set(liveSelected) as ReadonlySet<Id>,
     handles,
@@ -1073,6 +1112,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
         )}
       </div>
       {blockPalette}
+      <AutoBorders active={autoPreset?.id ?? null} onPick={(p) => setAutoPreset(p)} />
       {adjustPanel}
       <div className="palette-group" role="group" aria-label={fr.quilt.fabricTools}>
         <h3>{fr.quilt.fabricTools}</h3>
@@ -1118,7 +1158,50 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
           onResizeCustom={(w, h, keep) => execute(fr.quilt.history.resizeCustom, (d) => resizeCustom(d, w, h, keep), "resize-custom")}
         />
       )}
-      {tab === 2 && <p className="palette-empty">{fr.draw.soon}</p>}
+      {tab === 2 && (
+        <BorderPanel
+          borders={borders}
+          selectedId={activeBorder}
+          unit={unit}
+          keepBorders={options.keepBorders}
+          defaultStyle={options.borderStyle}
+          onSelect={setSelectedBorder}
+          onAdd={(clone) => {
+            let id: string | null = null;
+            execute(fr.quilt.borders.history.add, (d) => {
+              const r = addBorder(d, { style: options.borderStyle, selected: activeBorder, clone });
+              id = r.id;
+              return r.draft;
+            });
+            if (id) setSelectedBorder(id);
+          }}
+          onInsert={(clone) => {
+            let id: string | null = null;
+            execute(fr.quilt.borders.history.insert, (d) => {
+              const r = insertBorder(d, { style: options.borderStyle, selected: activeBorder, clone });
+              id = r.id;
+              return r.draft;
+            });
+            if (id) setSelectedBorder(id);
+          }}
+          onRemove={() => {
+            if (!activeBorder) return;
+            const at = borders.findIndex((b) => b.id === activeBorder);
+            execute(fr.quilt.borders.history.remove, (d) => removeBorder(d, project, activeBorder));
+            setSelectedBorder(borders[Math.max(0, at - 1) === at ? 1 : Math.max(0, at - 1)]?.id ?? null);
+          }}
+          onStyle={(style) => activeBorder && execute(fr.quilt.borders.history.style, (d) => setBorderStyle(d, project, activeBorder, style))}
+          onSize={(side: BorderSide, inches: number, lock: SizeLock) => activeBorder && execute(fr.quilt.borders.history.size, (d) => setBorderSize(d, project, activeBorder, side, inches, lock), `border-size:${activeBorder}:${side}`)}
+          onCount={(which, n) => activeBorder && execute(fr.quilt.borders.history.counts, (d) => setBorderCount(d, project, activeBorder, which, n), `border-count:${activeBorder}:${which}`)}
+          onMatchInner={() => {
+            const at = borders.findIndex((b) => b.id === activeBorder);
+            const inner = borders[at - 1];
+            if (activeBorder && inner) execute(fr.quilt.borders.history.counts, (d) => matchCounts(d, project, activeBorder, inner.id));
+          }}
+          onKeep={(v) => setOption("keepBorders", v)}
+          onDefaultStyle={(v) => setOption("borderStyle", v)}
+        />
+      )}
       {tab === 3 && designPalette}
       {tab === 4 && <p className="palette-empty">{fr.draw.soon}</p>}
       {colorTools.element}
@@ -1139,7 +1222,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
             {fr.quilt.clearQuilt}
           </button>
         </div>
-        <QuiltCanvas paint={canvasPaint} onPointer={onPointer} onDrop={onDropBlock} cursor={cursor} fitKey={`${layoutResult.width}x${layoutResult.height}`} footer={finished} />
+        <QuiltCanvas paint={canvasPaint} onPointer={onPointer} onDrop={onDropBlock} cursor={cursor} fitKey={`${total.width}x${total.height}`} footer={finished} />
         <div className="layer-tabs" role="tablist" aria-label={fr.quilt.layers[1]} data-testid="layer-tabs">
           {([1, 2, 3] as Layer[]).map((l) => (
             <div key={l} className="layer-tab">

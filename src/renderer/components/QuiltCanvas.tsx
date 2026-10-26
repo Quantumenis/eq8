@@ -57,14 +57,23 @@ export function QuiltCanvas({ paint, onPointer, onDrop, cursor, fitKey, footer }
     return () => observer.disconnect();
   }, []);
 
-  const centerW = paint.scene.width;
-  const centerH = paint.scene.height;
+  // Le cadrage vise le quilt fini (bordures comprises) ; l'origine reste le coin haut-gauche du centre.
+  const bounds = paint.scene.bounds;
+  const totalW = bounds.x1 - bounds.x0;
+  const totalH = bounds.y1 - bounds.y0;
+  const fittedView = useCallback(
+    (areaW: number, areaH: number): View => {
+      const v = fitView(areaW, areaH, totalW, totalH, paint.rulers ? 40 : 28);
+      return { ...v, originX: v.originX - bounds.x0 * v.scale, originY: v.originY - bounds.y0 * v.scale };
+    },
+    [totalW, totalH, bounds.x0, bounds.y0, paint.rulers],
+  );
   useLayoutEffect(() => {
     fitted.current = true;
   }, [fitKey]);
   useLayoutEffect(() => {
-    if (fitted.current && size.width > 0 && size.height > 0) setView(fitView(size.width, size.height, centerW, centerH, paint.rulers ? 40 : 28));
-  }, [size, centerW, centerH, fitKey, paint.rulers]);
+    if (fitted.current && size.width > 0 && size.height > 0) setView(fittedView(size.width, size.height));
+  }, [size, fittedView, fitKey]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeTick((n) => n + 1));
@@ -156,7 +165,7 @@ export function QuiltCanvas({ paint, onPointer, onDrop, cursor, fitKey, footer }
   };
   const fit = () => {
     fitted.current = true;
-    setView(fitView(size.width, size.height, centerW, centerH, paint.rulers ? 40 : 28));
+    setView(fittedView(size.width, size.height));
   };
 
   // Ctrl++, Ctrl+−, Ctrl+0 (comme dans le plan Bloc).
@@ -208,6 +217,9 @@ export function QuiltCanvas({ paint, onPointer, onDrop, cursor, fitKey, footer }
         data-items={paint.scene.items.length}
         data-width={paint.scene.width}
         data-height={paint.scene.height}
+        data-total-width={totalW}
+        data-total-height={totalH}
+        data-borders={paint.scene.borders.rings.length}
         tabIndex={0}
         style={{ width: size.width, height: size.height, cursor }}
         onPointerDown={onDown}

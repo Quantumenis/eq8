@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M6 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
+> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M7 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -14,8 +14,9 @@
 | M3 — Détection des pièces, coloration, bibliothèque de blocs | ✅ terminé | 2026-10-26 |
 | **M4 — Tissus, couleurs et fils** | ✅ terminé | 2026-10-26 |
 | M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ✅ terminé | 2026-10-26 |
-| **M6 — Bordures** | ⏭️ prochain | — |
-| M7 … M9 | à faire | — |
+| **M6 — Bordures** | ✅ terminé | 2026-10-26 |
+| **M7 — Impression et PDF à l'échelle, export, métrage** | ⏭️ prochain | — |
+| M8 … M9 | à faire | — |
 
 ## M1 — fait
 
@@ -244,8 +245,48 @@
 ## Reporté / limites connues (M5)
 
 - Baby Blocks, Blocs variables, Photo Patchwork, Quilt à partir d'un bloc, bibliothèque de dispositions : non faits (P2). Fils/pochoirs/broderies du calque 3 : seul l'affichage des lignes ; pas de fil au quilt. Texte en applique : non.
-- Les bordures (M6) : le quilt fini = le centre. Le tissu d'une pièce déformée (pointe variable) n'est pas cisaillé : seule la rotation du bloc l'oriente.
+- Les bordures sont venues avec M6. Le tissu d'une pièce déformée (pointe variable) n'est pas cisaillé : seule la rotation du bloc l'oriente.
 - Pas de test e2e du glisser-déposer HTML5 depuis la palette (le clic dans le centre fait la même pose), ni de la rotation du tissu / Aléatoire à l'écran (couverts par les tests du cœur).
+
+## M6 — fait
+
+**Cœur (`src/core/quilt/`, TypeScript pur)**
+- `borders.ts` : le modèle (`Border` = id stable `b1`, `b2`…, style, **taille par côté**, nombres de blocs `nh`/`nv`), les **22 styles** et leur géométrie exacte. Un côté est une bande (u le long, v de l'arête intérieure vers l'extérieur) remplie d'un motif périodique ; chaque pièce devient un **emplacement du calque 1** (clé `r<id>.<côté><n>`), avec un cadre où le bloc s'étire (rectangle ou losange) quand la forme s'y prête (les triangles sont des pièces à colorer). Coins : « Longue horizontale / verticale » et les styles à carreaux font courir deux côtés sur toute la longueur ; les autres ont des **carrés de coin**. « Onglet » = 4 trapèzes, sans bloc. Les « quinconces » décalent d'une demi-cellule ; les « doubles » empilent deux rangées. **Alignés** : les arêtes suivent la grille de la bordure intérieure (n + 2 blocs par côté ; quinconce = milieux des cellules). `buildBorders` renvoie les emplacements, l'anneau de chaque bordure (intérieur/extérieur) et le **quilt fini** (`bounds`) ; `finishedSize`.
+- `borderops.ts` : Ajouter (à l'extérieur), Insérer (à l'intérieur de la sélection), **Cloner** (style, tailles, nombres — ni couleurs ni blocs), Supprimer, changer de style (efface le contenu, SPEC §3.9), **tailles avec verrouillage** (Tous / G+D / H+B / rien), nombres de blocs (pour les carreaux, l'autre nombre suit : carreaux carrés), « même nombre que la bordure intérieure ». `borderpresets.ts` : **10 bordures automatiques** faites maison (3 catégories) qui règlent la bordure et la colorent en couleurs unies.
+- `doc.ts` : `QuiltDoc.borders` (lecture défensive ; un fichier d'avant M6 n'a pas de bordure ; **format v1 inchangé**, champ facultatif) ; un nouveau quilt a une bordure « Longue horizontale » de 1 po. `scene.ts` : les emplacements des bordures s'ajoutent à ceux du centre ; `scene.bounds`. `ops.ts` : `newLayout(draft, kind, keepBorders)` (**Garder les bordures actuelles** : réglages gardés, contenu effacé), `prune`, `placeBlock` (**les bordures reçoivent des blocs dans toutes les dispositions**, même Custom Set ; le centre seulement dans les dispositions standard), Ctrl/Alt dans une bordure = les emplacements de cette bordure.
+
+**Interface**
+- Onglet **BORDURES** : ruban des 22 styles (vignettes tirées de la vraie géométrie), CHOISIR UNE BORDURE (◀ « 3 sur 4 » ▶, ou clic sur le quilt), Ajouter / Insérer / Supprimer + « Cloner la bordure sélectionnée », quatre tailles (champ + curseur, pas de 0,25 po) avec verrous, BLOCS DANS LA BORDURE, « Garder les bordures actuelles » et « Style des nouvelles bordures » (mémorisés). La bordure sélectionnée est **grise** (si vide) et cernée. Le quilt est cadré sur le **quilt fini** ; la barre du bas donne la taille avec bordures.
+- Onglet DESIGN : outil **Bordures automatiques** (catégorie, vignette, puis clic sur une bordure du quilt). Poser, pivoter, miroir et effacer fonctionnent dans les bordures. Vignettes de quilts avec bordures.
+
+## Vérifications M6 (2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **311/311** (+ 1 ignoré) — dont 63 nouveaux : **52 × 61 po** (bordures 1 + 2,5 + 4, Tous) et **43 × 48 po** (G+D = 3, H+B = 1) ; pour **chacun des 22 styles** : somme des aires des pièces = aire de l'anneau (10⁻⁶, 5 jeux de tailles dont des côtés à 0) et **chaque point de l'anneau couvert par une seule pièce** (4 000 points aléatoires : ni trou ni recouvrement) ; comptes de pièces pour 4 × 5 blocs ; carreaux : quatre côtés forcés, pièces à 4 côtés ; **alignés** : arêtes de la bordure alignée = arêtes de la bordure intérieure (n + 2 blocs) ; ajouter / insérer / supprimer / cloner ; pose d'un bloc étiré (aire des pièces = aire de l'emplacement), Ctrl+clic limité à la bordure, Onglet sans bloc, Custom Set ; garder les bordures ; aller-retour du fichier et valeurs absurdes ; les 10 bordures automatiques |
+| `npm run e2e` | **37/37** (+ 1 : Ajouter → 3 po (Tous) → Losanges → 4 × 5 blocs → clic pour choisir → bloc posé dans un losange → capture `m6-bordures.png` ; **Annuler/Rétablir** ; changer de style efface et s'annule ; cloner ; supprimer ; verrous G+D / H+B ; carreaux refusent 0 ; bordure automatique ; `.qsp` relu avec les bordures). `m0-*.png` et `m5-quilt-horizontal.png` réenregistrées (bordure de 1 po par défaut) et vérifiées à l'œil |
+| `npm run dist` / `e2e:dist` | 2 exe / 3/3 |
+
+## Décisions prises pendant M6
+
+- **Géométrie reconstituée** (Q-3.1, à valider sur capture) d'après les illustrations p. 60-61 et 70 : en particulier **Grands et petits losanges** (grand losange par cellule ; chaque triangle du joint est coupé en un petit losange inscrit et deux petits triangles), **Grandes et petites pointes** (même découpage dans le triangle inverse), **Carrés espacés** (n carrés de côté t, bandes entre eux), **Doubles losanges** (deux rangées de t/2) et le « quinconce » (décalage d'une demi-cellule). Les styles Carreaux et Losanges ne diffèrent que par les coins et les côtés forcés ; **Carreaux carrés** = une rangée de carreaux sur tout le tour.
+- **Pose de blocs** : seuls les **rectangles et les losanges** sont des emplacements de bloc ; les triangles et les bandes de fond se colorent. Les blocs ne sont pas tournés selon le côté de la bordure (toujours droits, étirés dans le cadre). Le bloc posé dans un losange est étiré dans son cadre en losange, comme « Sur la pointe ».
+- **Clé des emplacements** `r<id>.…` : les identifiants de bordure sont stables (`b1`…, jamais réutilisés tant que la bordure existe) ; supprimer une bordure retire ses blocs et ses couleurs (les clés orphelines sont élaguées par `prune` à chaque changement de taille ou de style).
+- **Taille à 0** : un côté à 0 disparaît, et ses blocs avec lui (Annuler les rend). Les styles Carreaux **refusent** 0 (le champ reste à sa valeur).
+- **Compteurs** : ils ne s'appliquent qu'aux styles qui ont des emplacements (Q-3.2) ; à la création d'une bordure, ils sont proposés pour que les blocs soient à peu près carrés (peut donner 30+ blocs : réglable jusqu'à 100) ; pour les carreaux, modifier l'un recalcule l'autre.
+- **Bordures automatiques** : des réglages + couleurs unies (pas de blocs de bibliothèque) ; elles s'appliquent à la bordure cliquée, remplacent son contenu, et changer le style ensuite les efface.
+- **Garder les bordures** est mémorisé dans les options du plan Quilt (stockage local de l'interface), comme les autres options (Q-3.3).
+- **Repère** : l'origine reste le coin haut-gauche du **centre** ; X/Y de l'outil Ajuster et le pointeur sont donnés depuis ce coin (les bordures sont à coordonnées négatives). Découpe d'un élément libre « au bord » = le bord du quilt fini.
+- Les quilts d'avant M6 s'ouvrent **sans bordure** (leur taille finie ne change pas) ; tout nouveau quilt a une bordure de 1 po (les captures de référence et les nombres d'emplacements des tests e2e en tiennent compte).
+
+## Reporté / limites connues (M6)
+
+- Assistant « style par côté » (P3) non fait : on crée quatre bordures dont trois côtés valent 0. Pas de pivotement des blocs selon le côté d'une bordure.
+- Les bordures automatiques ne posent pas de blocs de la bibliothèque (M8 pourra en ajouter) ; la liste est faite maison (Q-8.1).
+- « Garder les bordures » ne s'applique qu'aux changements de disposition faits depuis NOUVEAU QUILT.
+- Les règles et le pointeur ne partent pas du coin du quilt fini.
+- Une bordure de style « alignés » ne prend pas automatiquement le nombre de blocs de la bordure intérieure : le bouton « Même nombre que la bordure intérieure » le fait.
 
 ## Notes pratiques
 

@@ -128,7 +128,7 @@ export function sprayTargets(scene: Scene, piece: ScenePiece, mode: ClickMode): 
     // Une pièce d'emplacement : un emplacement non colorié ou un morceau de lattis.
     if (mode === "all") return sameLayer;
     if (mode === "alternate") return sameLayer.filter((p) => parity(p) === parity(piece));
-    return sameLayer.filter((p) => p.owner === piece.owner || (p.pieceKey === "" && p.role !== "block" && piece.role !== "block" && p.role === piece.role));
+    return sameLayer.filter((p) => p.owner === piece.owner || (p.pieceKey === "" && p.role !== "block" && piece.role !== "block" && p.role === piece.role && p.border === piece.border));
   }
   if (mode === "one") return sameLayer.filter((p) => p.owner === piece.owner);
   if (mode === "all") return sameLayer;

@@ -4,6 +4,16 @@
 
 import type { Id, JsonValue, Paint, Project, QuiltItem, BlockPlacement } from "../project/model";
 import { BLOCK_LISTS, createId, findBlock } from "../project/model";
+import {
+  BORDER_SIDES,
+  BORDER_STYLES,
+  clampSizes,
+  defaultBorders,
+  makeBorder,
+  type Border,
+  type BorderSizes,
+  type BorderStyle,
+} from "./borders";
 import { clampLayout, defaultLayout, LAYOUT_KINDS, type LayoutKind, type LayoutParams } from "./layout";
 
 export type Layer = 1 | 2 | 3;
@@ -46,6 +56,8 @@ export interface QuiltDoc {
   set: Record<string, SetBlock>;
   /** Du fond vers le premier plan (par calque). */
   items: FreeItem[];
+  /** Les bordures, de l'intérieur vers l'extérieur (SPEC §3.1). */
+  borders: Border[];
 }
 
 export interface QuiltDraft {
@@ -53,12 +65,12 @@ export interface QuiltDraft {
   fills: Readonly<Record<string, Paint>>;
 }
 
-export function newDoc(kind: LayoutKind): QuiltDoc {
-  return { v: 1, layout: defaultLayout(kind), set: {}, items: [] };
+export function newDoc(kind: LayoutKind, borderStyle?: BorderStyle): QuiltDoc {
+  return { v: 1, layout: defaultLayout(kind), set: {}, items: [], borders: defaultBorders(borderStyle) };
 }
 
-export function newDraft(kind: LayoutKind = "horizontal"): QuiltDraft {
-  return { doc: newDoc(kind), fills: {} };
+export function newDraft(kind: LayoutKind = "horizontal", borderStyle?: BorderStyle): QuiltDraft {
+  return { doc: newDoc(kind, borderStyle), fills: {} };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -81,6 +93,24 @@ function parseLayout(v: unknown): LayoutParams | null {
       : base.strips;
   }
   return clampLayout(merged as unknown as LayoutParams, 100);
+}
+
+/** Relit les bordures ; un fichier sans bordures (avant M6) n'en a pas. */
+function parseBorders(v: unknown): Border[] {
+  if (!Array.isArray(v)) return [];
+  const out: Border[] = [];
+  const seen = new Set<string>();
+  for (const b of v.slice(0, 50)) {
+    if (!isRec(b) || typeof b.id !== "string" || b.id === "" || b.id.includes("/") || b.id.includes(".") || seen.has(b.id)) continue;
+    if (typeof b.style !== "string" || !(BORDER_STYLES as readonly string[]).includes(b.style)) continue;
+    const style = b.style as BorderStyle;
+    const raw = isRec(b.sizes) ? b.sizes : {};
+    const sizes = {} as BorderSizes;
+    for (const side of BORDER_SIDES) sizes[side] = num(raw[side], 1);
+    seen.add(b.id);
+    out.push(makeBorder(b.id, style, clampSizes(style, sizes), { nh: num(b.nh, 8), nv: num(b.nv, 8) }));
+  }
+  return out;
 }
 
 /** Relit le quilt d'un fichier ; `null` si la disposition est illisible. */
@@ -116,7 +146,7 @@ export function parseDoc(value: JsonValue): QuiltDoc | null {
       });
     }
   }
-  return { v: 1, layout, set, items };
+  return { v: 1, layout, set, items, borders: parseBorders(value.borders) };
 }
 
 export const docToJson = (doc: QuiltDoc): JsonValue => doc as unknown as JsonValue;
