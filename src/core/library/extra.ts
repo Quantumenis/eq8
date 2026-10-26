@@ -19,6 +19,7 @@ import type { Pt, Segment } from "../draw/geometry";
 import { gridEdge, DEFAULT_GRIDS, emptyPoly, type PolyPiece } from "../draw/polydraw";
 import { createId, emptyNotecard, type BlockItem, type BlockListKey, type Coloring, type Paint } from "../project/model";
 import { toGrey } from "./builder";
+import { ENTRY_TAGS } from "./categories";
 import { LIBRARY_BLOCKS, LIBRARY_NAME, builtLibraryBlock, instantiateLibraryBlock, type LibraryBlockDef } from "./blocks";
 
 export const EXTRA_CATEGORIES = {
@@ -338,14 +339,18 @@ export function builtEntry(entry: LibraryEntry): ReturnType<LibraryEntry["build"
 /** Un élément de bibliothèque prêt à entrer dans le carnet (identifiants neufs), avec la liste où il va. */
 export function instantiateEntry(entry: LibraryEntry): { list: BlockListKey; item: BlockItem } {
   const recipe = LIBRARY_BLOCKS.find((d) => d.id === entry.id);
-  if (recipe) return { list: "blocks", item: instantiateLibraryBlock(recipe) };
+  const tags = ENTRY_TAGS[entry.id] ?? [];
+  if (recipe) {
+    const item = instantiateLibraryBlock(recipe);
+    return { list: "blocks", item: { ...item, card: { ...item.card, back: { ...item.card.back, categories: [...item.card.back.categories, ...tags] } } } };
+  }
   const b = builtEntry(entry);
   const card = emptyNotecard(entry.name);
   return {
     list: entry.list,
     item: {
       id: createId(),
-      card: { ...card, reference: `${LIBRARY_NAME} — ${entry.category}`, notes: entry.notes, back: { classification: entry.style, categories: [entry.category, entry.style] } },
+      card: { ...card, reference: `${LIBRARY_NAME} — ${entry.category}`, notes: entry.notes, back: { classification: entry.style, categories: [entry.category, entry.style, ...tags] } },
       width: entry.width,
       height: entry.height,
       drawing: b.drawing,

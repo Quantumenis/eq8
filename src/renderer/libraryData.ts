@@ -1,6 +1,7 @@
 // Contenu des bibliothèques pour l'interface : la bibliothèque intégrée vue comme un carnet en lecture seule
 // (identifiants stables), le presse-papiers des bibliothèques et l'accès aux « Mes favoris ».
 
+import { ENTRY_TAGS } from "../core/library/categories";
 import { LIBRARY_ENTRIES, builtEntry, libraryEntryTree } from "../core/library/extra";
 import { LIBRARY_FABRICS, fabricLibraryTree, instantiateLibraryFabric } from "../core/library/fabrics";
 import { readFavorites, writeFavorites, type FavoriteKind, type FavoriteLibrary } from "../core/library/favorites";
@@ -28,7 +29,7 @@ export function builtinLibrary(kind: LibraryKind): { source: Source; tree: Built
     // La bibliothèque de blocs réunit blocs, motifs et pochoirs ; chacun arrive dans sa liste du carnet.
     for (const def of LIBRARY_ENTRIES) {
       const b = builtEntry(def);
-      const card = { ...emptyNotecard(def.name), notes: def.notes, reference: `${LIBRARY_NAME} — ${def.category}`, back: { classification: def.style, categories: [def.category] } };
+      const card = { ...emptyNotecard(def.name), notes: def.notes, reference: `${LIBRARY_NAME} — ${def.category}`, back: { classification: def.style, categories: [def.category, def.style, ...(ENTRY_TAGS[def.id] ?? [])] } };
       const item: BlockItem = { id: def.id, card, width: def.width, height: def.height, drawing: b.drawing, colorings: b.colorings };
       project.sketchbook[def.list].push(item);
     }

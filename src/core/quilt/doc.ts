@@ -51,6 +51,10 @@ export interface FreeItem {
   clip: Clip;
   /** Texte en applique (calque 2) : `blockId` est alors vide, et le bloc est tiré des glyphes de la police. */
   text?: TextSpec;
+  /** Broderie du carnet (calque 3) : rendu brouillon ou 3D, et fil (#rrggbb ; absent = le fil de la broderie). */
+  embroidery?: { id: Id; render: "draft" | "3d"; thread?: string };
+  /** Photo du carnet (calque 1 en Custom Set, calque 2 partout) : toujours un rectangle. */
+  photoId?: Id;
 }
 
 export interface QuiltDoc {
@@ -145,7 +149,9 @@ export function parseDoc(value: JsonValue): QuiltDoc | null {
     for (const i of value.items) {
       if (!isRec(i) || typeof i.id !== "string" || typeof i.blockId !== "string") continue;
       const text = parseText(i.text);
-      const layer = text ? 2 : i.layer === 2 || i.layer === 3 ? i.layer : 1;
+      const emb = isRec(i.embroidery) && typeof i.embroidery.id === "string" ? i.embroidery : null;
+      const photoId = typeof i.photoId === "string" && i.photoId ? i.photoId : undefined;
+      const layer = text ? 2 : emb ? 3 : photoId ? (i.layer === 2 ? 2 : 1) : i.layer === 2 || i.layer === 3 ? i.layer : 1;
       items.push({
         id: i.id,
         layer,
@@ -161,6 +167,10 @@ export function parseDoc(value: JsonValue): QuiltDoc | null {
         skew: Math.max(-80, Math.min(80, num(i.skew, 0))),
         clip: i.clip === "border" || i.clip === "none" ? i.clip : "edge",
         ...(text ? { text } : {}),
+        ...(emb
+          ? { embroidery: { id: emb.id as string, render: emb.render === "3d" ? ("3d" as const) : ("draft" as const), ...(typeof emb.thread === "string" && /^#[0-9a-f]{6}$/i.test(emb.thread) ? { thread: emb.thread } : {}) } }
+          : {}),
+        ...(photoId ? { photoId } : {}),
       });
     }
   }
@@ -197,7 +207,7 @@ export function placementsOf(project: Project, doc: QuiltDoc): BlockPlacement[] 
     out.push({ blockId: r.blockId, coloringId: r.coloringId });
   };
   for (const s of Object.values(doc.set)) add(s);
-  for (const i of doc.items) if (!i.text) add(i);
+  for (const i of doc.items) if (!i.text && !i.embroidery && !i.photoId) add(i);
   return out;
 }
 

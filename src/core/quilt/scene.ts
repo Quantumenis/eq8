@@ -10,6 +10,7 @@ import { contentOfDrawing, type DrawingContent } from "../draw/content";
 import type { Piece } from "../draw/pieces";
 import type { Strand } from "../draw/applique";
 import { textBlockOf } from "../text/registry";
+import { parseEmbroidery, threadThickness } from "../embroidery/embroidery";
 import { samePaint } from "../draw/coloring";
 import type { BlockItem, Id, Paint, Project } from "../project/model";
 import { findBlock } from "../project/model";
@@ -128,6 +129,17 @@ export interface SceneStrand {
   strand: Strand;
   /** Du repère du bloc vers le repère du centre. */
   mat: Mat;
+  /** Broderie : couleur du fil, épaisseur (pouces) et rendu. */
+  thread?: { rgb: string; width: number; render: "draft" | "3d" };
+}
+
+/** Une photo posée dans le quilt : un rectangle (cadre de l'élément, éventuellement pivoté). */
+export interface ScenePhoto {
+  item: FreeItem;
+  photoId: Id;
+  layer: Layer;
+  /** Du carré unité vers le repère du centre. */
+  mat: Mat;
 }
 
 export interface SceneItem {
@@ -154,6 +166,7 @@ export interface Scene {
   items: SceneItem[];
   pieces: ScenePiece[];
   strands: SceneStrand[];
+  photos: ScenePhoto[];
 }
 
 function blockMatFor(block: { width: number; height: number }, frame: Mat, rot: number, flip: boolean): Mat {
@@ -219,6 +232,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
   const slots: SceneSlot[] = [];
   const items: SceneItem[] = [];
   const strands: SceneStrand[] = [];
+  const photos: ScenePhoto[] = [];
   const borders = buildBorders(layout.width, layout.height, doc.borders);
 
   for (const slot of [...layout.slots, ...borders.slots]) {
@@ -269,6 +283,31 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
   for (const item of sceneItems) {
     const mat = itemMat(item);
     items.push({ item, poly: itemPolygon(item), mat });
+    if (item.photoId) {
+      photos.push({ item, photoId: item.photoId, layer: item.layer, mat });
+      continue;
+    }
+    if (item.embroidery) {
+      const found = project.sketchbook.embroideries.find((e) => e.id === item.embroidery?.id);
+      const emb = found ? parseEmbroidery(found.content) : null;
+      if (!emb) continue;
+      const bm = blockMatFor({ width: emb.width, height: emb.height }, mat, item.rot, item.flip);
+      const render = item.embroidery.render;
+      emb.paths.forEach((p, k) => {
+        const pts = p.closed ? [...p.points, p.points[0] as [number, number]] : p.points;
+        const segments = pts.slice(0, -1).map(([x, y], i) => ({ id: `e${k}.${i}`, kind: "line" as const, a: { x, y }, b: { x: (pts[i + 1] as [number, number])[0], y: (pts[i + 1] as [number, number])[1] } }));
+        strands.push({
+          key: `${item.id}/e${k}`,
+          owner: item.id,
+          layer: item.layer,
+          itemId: item.id,
+          strand: { key: `e${k}`, segments },
+          mat: bm,
+          thread: { rgb: item.embroidery?.thread ?? emb.thread, width: threadThickness(render), render },
+        });
+      });
+      continue;
+    }
     if (item.text) {
       // Texte en applique : les pièces viennent des glyphes (rien tant que la police n'est pas chargée).
       const tb = textBlockOf(item.text);
@@ -315,7 +354,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
     }
   }
 
-  return { width: layout.width, height: layout.height, layout, borders, bounds: borders.bounds, slots, items, pieces, strands };
+  return { width: layout.width, height: layout.height, layout, borders, bounds: borders.bounds, slots, items, pieces, strands, photos };
 }
 
 /** Les clés de coloration qui existent dans la scène (les autres viennent d'une disposition changée). */

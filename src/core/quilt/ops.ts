@@ -239,6 +239,37 @@ export function addItem(draft: QuiltDraft, project: Project, input: { layer: Lay
   return { draft: { doc: { ...draft.doc, items: [...draft.doc.items, item] }, fills: draft.fills }, id: item.id };
 }
 
+function freeItemBase(layer: Layer, x: number, y: number, w: number, h: number): FreeItem {
+  return { id: createId(), layer, blockId: "", coloringId: "", x: round(x), y: round(y), w: Math.max(0.01, round(w)), h: Math.max(0.01, round(h)), rot: 0, flip: false, angle: 0, skew: 0, clip: "edge" };
+}
+
+/** Pose une photo du carnet : calque 1 en Custom Set seulement, calque 2 dans toutes les dispositions (SPEC §4.7). */
+export function addPhotoItem(draft: QuiltDraft, project: Project, input: { layer: 1 | 2; photoId: Id; x: number; y: number; w?: number; h?: number }): { draft: QuiltDraft; id: Id | null } {
+  if (input.layer === 1 && draft.doc.layout.kind !== "custom") return { draft, id: null };
+  const photo = project.sketchbook.photos.find((p) => p.id === input.photoId);
+  if (!photo) return { draft, id: null };
+  const w = input.w ?? 6;
+  const h = input.h ?? w;
+  const item: FreeItem = { ...freeItemBase(input.layer, input.x, input.y, w, h), photoId: photo.id };
+  return { draft: { doc: { ...draft.doc, items: [...draft.doc.items, item] }, fills: draft.fills }, id: item.id };
+}
+
+/** Pose une broderie du carnet au calque 3, à sa taille enregistrée. */
+export function addEmbroideryItem(draft: QuiltDraft, project: Project, input: { embroideryId: Id; x: number; y: number; w: number; h: number; render?: "draft" | "3d" }): { draft: QuiltDraft; id: Id | null } {
+  if (!project.sketchbook.embroideries.some((e) => e.id === input.embroideryId)) return { draft, id: null };
+  const item: FreeItem = { ...freeItemBase(3, input.x, input.y, input.w, input.h), embroidery: { id: input.embroideryId, render: input.render ?? "draft" } };
+  return { draft: { doc: { ...draft.doc, items: [...draft.doc.items, item] }, fills: draft.fills }, id: item.id };
+}
+
+/** Rendu (brouillon ou 3D) et fil d'une broderie posée. */
+export function setEmbroideryOptions(draft: QuiltDraft, id: Id, patch: { render?: "draft" | "3d"; thread?: string | null }): QuiltDraft {
+  const cur = draft.doc.items.find((i) => i.id === id);
+  if (!cur?.embroidery) return draft;
+  const { thread, ...rest } = cur.embroidery;
+  const next = { ...rest, ...(patch.render ? { render: patch.render } : {}), ...(patch.thread === null ? {} : patch.thread ? { thread: patch.thread } : thread ? { thread } : {}) };
+  return updateItem(draft, id, { embroidery: next });
+}
+
 /** Pose un texte en applique au calque 2 : `w` et `h` sont la boîte tracée (elle se recale sur le texte quand on le tape). */
 export function addTextItem(draft: QuiltDraft, input: { x: number; y: number; w: number; h: number; spec: TextSpec }): { draft: QuiltDraft; id: Id } {
   const item: FreeItem = {

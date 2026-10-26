@@ -16,6 +16,7 @@ import {
   type FavoriteLibrary,
 } from "../../core/library/favorites";
 import { SEARCH_MAX_DEFAULT, clampSearchMax, searchByColor, searchByText } from "../../core/library/search";
+import { ALL_FIELDS, CATEGORY_SECTIONS, MAX_CATEGORIES, searchByCategories, searchCards, type CardFields } from "../../core/library/categories";
 import { averageColor } from "../../core/image/raster";
 import { addAsset } from "../../core/project/assets";
 import { addLibraryBlock } from "../../core/project/commands";
@@ -349,9 +350,13 @@ export function Library({ kind, unit, notify, onAdded, onClose }: Props) {
     if (query.current) pools.push(...itemsOf(current, kind).map((item) => ({ key: `c:${item.id}`, item, source: current, builtin: false })));
     const max = clampSearchMax(query.max);
     const results =
-      query.mode === "text"
-        ? searchByText(pools, (e) => [e.item.card.name, e.item.card.reference], query.text, max)
-        : searchByColor(pools, (e) => averageOf(e.item), query.color, max);
+      query.mode === "categories"
+        ? searchByCategories(pools, (e) => e.item.card.back.categories, query.categories, max)
+        : query.mode === "text"
+          ? kind === "blocks"
+            ? searchCards(pools, (e) => e.item.card, query.text, query.fields, max)
+            : searchByText(pools, (e) => [e.item.card.name, e.item.card.reference], query.text, max)
+          : searchByColor(pools, (e) => averageOf(e.item), query.color, max);
     setSearchResults(results);
     setSearching(false);
     await choose({ kind: "search" });
@@ -695,7 +700,9 @@ function EntryCard({ entry, kind, unit, coloringIndex, onColoring }: { entry: En
 // Recherche
 
 interface SearchQuery {
-  mode: "color" | "text";
+  mode: "color" | "text" | "categories";
+  categories: string[];
+  fields: CardFields;
   color: string;
   text: string;
   max: number;
@@ -721,8 +728,10 @@ function SearchDialog({
 }) {
   const t = fr.library.searchDialog;
   const base = focused ? averageOf(focused) : null;
-  const [q, setQ] = useState<SearchQuery>({ mode: "color", color: base ?? colors[0] ?? "#808080", text: "", max: SEARCH_MAX_DEFAULT, builtin: true, favorites: hasFavorites, current: false });
-  const ready = q.mode === "text" ? q.text.trim().length > 0 : true;
+  const [q, setQ] = useState<SearchQuery>({ mode: kind === "blocks" ? "text" : "color", categories: [], fields: ALL_FIELDS, color: base ?? colors[0] ?? "#808080", text: "", max: SEARCH_MAX_DEFAULT, builtin: true, favorites: hasFavorites, current: false });
+  const ready = q.mode === "text" ? q.text.trim().length > 0 : q.mode === "categories" ? q.categories.length > 0 : true;
+  const toggleCategory = (c: string) =>
+    setQ((cur) => ({ ...cur, categories: cur.categories.includes(c) ? cur.categories.filter((x) => x !== c) : cur.categories.length >= MAX_CATEGORIES ? cur.categories : [...cur.categories, c] }));
   return (
     <Modal
       title={t.title}
@@ -740,23 +749,57 @@ function SearchDialog({
         </>
       }
     >
-      {kind === "threads" && (
+      {(kind === "threads" || kind === "blocks") && (
         <fieldset className="radio-group">
           <legend>{t.by}</legend>
-          <label className="check">
-            <input type="radio" name="search-mode" checked={q.mode === "color"} data-testid="search-by-color" onChange={() => setQ({ ...q, mode: "color" })} />
-            <span>{t.byColor}</span>
-          </label>
+          {kind === "threads" && (
+            <label className="check">
+              <input type="radio" name="search-mode" checked={q.mode === "color"} data-testid="search-by-color" onChange={() => setQ({ ...q, mode: "color" })} />
+              <span>{t.byColor}</span>
+            </label>
+          )}
+          {kind === "blocks" && (
+            <label className="check">
+              <input type="radio" name="search-mode" checked={q.mode === "categories"} data-testid="search-by-categories" onChange={() => setQ({ ...q, mode: "categories" })} />
+              <span>{t.byCategories}</span>
+            </label>
+          )}
           <label className="check">
             <input type="radio" name="search-mode" checked={q.mode === "text"} data-testid="search-by-text" onChange={() => setQ({ ...q, mode: "text" })} />
             <span>{t.byText}</span>
           </label>
         </fieldset>
       )}
-      {q.mode === "text" ? (
+      {q.mode === "categories" ? (
+        <div data-testid="search-categories">
+          {CATEGORY_SECTIONS.map((section) => (
+            <fieldset key={section.id} className="radio-group">
+              <legend>{section.id}</legend>
+              <div className="button-grid">
+                {section.categories.map((c) => (
+                  <button key={c} type="button" className="tool-button tool-button--small" aria-pressed={q.categories.includes(c)} data-testid={`category-${c}`} onClick={() => toggleCategory(c)}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          ))}
+          <p className="muted" data-testid="search-chosen">{t.chosen(q.categories.length, MAX_CATEGORIES)}{q.categories.length > 0 ? ` : ${q.categories.join(", ")}` : ""}</p>
+        </div>
+      ) : q.mode === "text" ? (
         <label className="field">
           <span className="field-label">{t.text}</span>
           <input className="field-input" data-autofocus value={q.text} data-testid="search-text" onChange={(e) => setQ({ ...q, text: e.target.value })} />
+          {kind === "blocks" && (
+            <span className="check-row">
+              {(["name", "reference", "notes"] as const).map((f) => (
+                <label key={f} className="check">
+                  <input type="checkbox" checked={q.fields[f]} data-testid={`search-field-${f}`} onChange={(e) => setQ({ ...q, fields: { ...q.fields, [f]: e.target.checked } })} />
+                  <span>{t.fields[f]}</span>
+                </label>
+              ))}
+            </span>
+          )}
         </label>
       ) : (
         <div className="search-color">
