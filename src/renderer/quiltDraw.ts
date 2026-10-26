@@ -10,6 +10,7 @@ import type { Layer } from "../core/quilt/doc";
 import type { Pt } from "../core/quilt/geom";
 import { itemMat, type Scene, type ScenePiece } from "../core/quilt/scene";
 import type { Palette } from "./blockDraw";
+import { fabricTiles } from "./fabricTiles";
 import { pieceFill } from "./paintView";
 
 export interface QuiltPaint {
@@ -42,6 +43,8 @@ export interface QuiltPaint {
   /** Onglet IMPRIMER & EXPORTER : l'élément choisi (entouré en vert) et le rectangle de l'export d'une sélection. */
   printMark?: readonly Pt[] | null;
   marquee?: { a: Pt; b: Pt } | null;
+  /** Photo Patchwork : la photo posée sur le centre (aperçu « Afficher la photo »). */
+  ghostPhoto?: { photoId: string; rect: { x0: number; y0: number; x1: number; y1: number } } | null;
 }
 
 const SEAM = "#24262b";
@@ -188,6 +191,27 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
       ctx.restore();
       if (clipEdge) ctx.restore();
     }
+    // Photos posées (rectangles, éventuellement pivotés par le cadre).
+    for (const ph of scene.photos) {
+      if (ph.layer !== layer) continue;
+      const photo = s.project.sketchbook.photos.find((p) => p.id === ph.photoId);
+      const view = photo ? fabricTiles.photoOf(photo, s.project, s.assets) : null;
+      worldTransform(ctx, s);
+      const clip = ph.item.clip === "edge";
+      ctx.save();
+      if (clip) {
+        ctx.beginPath();
+        ctx.rect(bounds.x0, bounds.y0, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+        ctx.clip();
+      }
+      ctx.transform(ph.mat[0], ph.mat[1], ph.mat[2], ph.mat[3], ph.mat[4], ph.mat[5]);
+      if (view?.image) ctx.drawImage(view.image, 0, 0, 1, 1);
+      else {
+        ctx.fillStyle = "#cfd3d8";
+        ctx.fillRect(0, 0, 1, 1);
+      }
+      ctx.restore();
+    }
     // Fils des motifs et des pochoirs (tracés ouverts) : traits fins, en pointillés bleus au calque 3.
     for (const st of scene.strands) {
       if (st.layer !== layer) continue;
@@ -198,10 +222,29 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
       const k = Math.hypot(m[0], m[1]) || 1;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
-      ctx.lineWidth = (layer === 3 ? 2 : 1.5) / view.scale / k;
-      ctx.strokeStyle = layer === 3 ? "#3b66b5" : SEAM;
-      if (layer === 3) ctx.setLineDash([6 / view.scale / k, 3 / view.scale / k]);
-      ctx.stroke(blockPath(st.strand, () => svgPathOfSegments(st.strand.segments)));
+      const path = blockPath(st.strand, () => svgPathOfSegments(st.strand.segments));
+      if (st.thread) {
+        // Broderie : un fil de la couleur choisie ; en 3D, une ombre dessous et un reflet dessus.
+        const w = Math.max(st.thread.width, 1.2 / view.scale) / k;
+        if (st.thread.render === "3d") {
+          ctx.strokeStyle = "rgba(0,0,0,0.35)";
+          ctx.lineWidth = w * 1.5;
+          ctx.stroke(path);
+        }
+        ctx.strokeStyle = st.thread.rgb;
+        ctx.lineWidth = w;
+        ctx.stroke(path);
+        if (st.thread.render === "3d") {
+          ctx.strokeStyle = "rgba(255,255,255,0.4)";
+          ctx.lineWidth = w * 0.3;
+          ctx.stroke(path);
+        }
+      } else {
+        ctx.lineWidth = (layer === 3 ? 2 : 1.5) / view.scale / k;
+        ctx.strokeStyle = layer === 3 ? "#3b66b5" : SEAM;
+        if (layer === 3) ctx.setLineDash([6 / view.scale / k, 3 / view.scale / k]);
+        ctx.stroke(path);
+      }
       ctx.restore();
     }
     ctx.restore();
@@ -225,6 +268,18 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
     ctx.setLineDash([5 / view.scale, 4 / view.scale]);
     ctx.strokeRect(ring.inner.x0, ring.inner.y0, ring.inner.x1 - ring.inner.x0, ring.inner.y1 - ring.inner.y0);
     ctx.restore();
+  }
+
+  if (s.ghostPhoto) {
+    const photo = s.project.sketchbook.photos.find((p) => p.id === s.ghostPhoto?.photoId);
+    const view = photo ? fabricTiles.photoOf(photo, s.project, s.assets) : null;
+    const r = s.ghostPhoto.rect;
+    if (view?.image) {
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(view.image, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+      ctx.restore();
+    }
   }
 
   // Grille d'accrochage du Custom Set.

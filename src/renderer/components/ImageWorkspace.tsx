@@ -32,6 +32,8 @@ import { getApi } from "../projectActions";
 import { session } from "../projectSession";
 import { useDialogs } from "./Dialogs";
 import { Check, NumberField } from "./fields";
+import { ColorAdjustDialog, HistogramDialog } from "./ImageColorDialogs";
+import { PhotoLayoutDialog } from "./PhotoLayoutDialog";
 
 type ImageTool = "pan" | "crop" | "straighten" | "measure";
 const TOOLS: ImageTool[] = ["pan", "crop", "straighten", "measure"];
@@ -148,6 +150,7 @@ export function ImageWorkspace({ unit, notify, onAdded, requests }: Props) {
   const [size, setSize] = useState({ w: 0, h: 0, res: 75 });
   const [method, setMethod] = useState<Resample>("normal");
   const [busy, setBusy] = useState(false);
+  const [dialog, setDialog] = useState<"color" | "histogram" | "layout" | null>(null);
 
   // À chaque nouvelle image (ou retouche), les valeurs proposées suivent l'image.
   useEffect(() => {
@@ -387,6 +390,21 @@ export function ImageWorkspace({ unit, notify, onAdded, requests }: Props) {
         )}
       </div>
 
+      <div className="palette-group" data-testid="image-m9">
+        <h3>{fr.m9.color.group}</h3>
+        <div className="button-grid">
+          <button type="button" className="btn btn--small" data-testid="image-color" disabled={!doc} onClick={() => setDialog("color")}>
+            {fr.m9.color.open}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="image-histogram" disabled={!doc} onClick={() => setDialog("histogram")}>
+            {fr.m9.histogram.open}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="image-layout" onClick={() => setDialog("layout")}>
+            {fr.m9.layout.open}
+          </button>
+        </div>
+      </div>
+
       {doc && (
         <>
           <div className="palette-group">
@@ -567,6 +585,25 @@ export function ImageWorkspace({ unit, notify, onAdded, requests }: Props) {
   return (
     <>
       {palette}
+      {dialog === "color" && doc && (
+        <ColorAdjustDialog
+          raster={doc.raster}
+          onClose={() => setDialog(null)}
+          onApply={(next) => {
+            run(fr.m9.color.history, (d) => ({ ...d, raster: next }));
+          }}
+        />
+      )}
+      {dialog === "histogram" && doc && (
+        <HistogramDialog
+          raster={doc.raster}
+          onClose={() => setDialog(null)}
+          onApply={(next) => {
+            run(fr.m9.histogram.history, (d) => ({ ...d, raster: next }));
+          }}
+        />
+      )}
+      {dialog === "layout" && <PhotoLayoutDialog unit={unit} notify={notify} onClose={() => setDialog(null)} />}
       <main className="worktable worktable--image-edit" data-testid="worktable">
         <ImageStage
           doc={doc}

@@ -40,16 +40,7 @@ export function PrintPalette({ plan, enabled, selection, selectionMode, onPrint,
         )}
         <div className="tool-grid">
           {BLOCK_KINDS.map(button)}
-          {plan === "quilt" && (
-            <>
-              <button type="button" className="tool-button" disabled title={fr.print.soon}>
-                {fr.print.kinds.photo}
-              </button>
-              <button type="button" className="tool-button" disabled title={fr.print.soon}>
-                {fr.print.kinds.embroidery}
-              </button>
-            </>
-          )}
+          {plan === "quilt" && (["photo", "embroidery"] as PrintKind[]).map(button)}
         </div>
         <div className="button-row">
           <button type="button" className="btn btn--small" data-testid="palette-page-setup" onClick={() => printSettings.openDialog("setup")}>

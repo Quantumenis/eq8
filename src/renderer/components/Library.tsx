@@ -19,6 +19,7 @@ import { SEARCH_MAX_DEFAULT, clampSearchMax, searchByColor, searchByText } from 
 import { ALL_FIELDS, CATEGORY_SECTIONS, MAX_CATEGORIES, searchByCategories, searchCards, type CardFields } from "../../core/library/categories";
 import { averageColor } from "../../core/image/raster";
 import { addAsset } from "../../core/project/assets";
+import { readQsp } from "../../core/project/qsp";
 import { addLibraryBlock } from "../../core/project/commands";
 import { makeImageFabric } from "../../core/project/images";
 import { checkProjectName } from "../../core/project/names";
@@ -341,6 +342,24 @@ export function Library({ kind, unit, notify, onAdded, onClose }: Props) {
     notify([t.imported(p.sketchbook.fabrics.length), failed.length > 0 ? t.importFailed(failed) : ""].filter(Boolean).join(" "));
   };
 
+  // ---- Importer depuis un projet (SPEC §8.6) ---------------------------------------------------------------------
+
+  const importProject = async () => {
+    const opened = await getApi().openProjectDialog();
+    if (!opened) return;
+    if (!opened.ok) return notify(t.importProjectFailed);
+    try {
+      const loaded = readQsp(opened.bytes);
+      const source: Source = { project: loaded.project, assets: loaded.assets };
+      const found = itemsOf(source, kind).map((item) => ({ key: `i:${item.id}`, item, source, builtin: false }));
+      setImportResults(found);
+      await choose({ kind: "import" });
+      notify(t.imported(found.length));
+    } catch {
+      notify(t.importProjectFailed);
+    }
+  };
+
   // ---- Rechercher ------------------------------------------------------------------------------------------------
 
   const runSearch = async (query: SearchQuery) => {
@@ -408,7 +427,10 @@ export function Library({ kind, unit, notify, onAdded, onClose }: Props) {
           {t.import}
         </button>
       )}
-      {kind !== "blocks" && (
+      <button type="button" className="btn" data-testid="library-import-project" disabled={busy} onClick={() => void importProject()}>
+        {t.importProject}
+      </button>
+      {(
         <button type="button" className="btn" data-testid="library-search" onClick={() => setSearching(true)}>
           {t.search}
         </button>

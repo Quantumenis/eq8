@@ -120,6 +120,7 @@ async function buildMenu(): Promise<void> {
         command("Enregistrer sous…", "save-as", "CmdOrCtrl+Shift+S"),
         command("Créer une copie du projet…", "save-copy"),
         { type: "separator" },
+        command("Ouvrir un quilt rapide…", "open-quick-quilt"),
         command("Importer une image…", "import-image", "CmdOrCtrl+I"),
         { type: "separator" },
         command("Ajouter au carnet", "add-to-sketchbook", "CmdOrCtrl+Shift+A"),
@@ -174,11 +175,16 @@ async function buildMenu(): Promise<void> {
         command("Blocs…", "show-block-library", "CmdOrCtrl+L"),
         command("Tissus…", "show-fabric-library", "CmdOrCtrl+Shift+F"),
         command("Fils…", "show-thread-library", "CmdOrCtrl+Shift+T"),
+        command("Broderies…", "show-embroidery-library"),
+        command("Dispositions…", "show-layout-library"),
       ],
     },
     {
       label: "&Aide",
       submenu: [
+        command("Aide de Quilt Studio", "show-help", "F1"),
+        command("Accueil", "show-home"),
+        { type: "separator" },
         {
           label: `À propos de ${APP_NAME}`,
           click: () => {

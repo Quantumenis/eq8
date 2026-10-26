@@ -7,6 +7,9 @@ import { autoSections, checkSections, foundationPages, type FoundationStyle, typ
 import type { Rounding } from "../../core/print/format";
 import type { BlockStyle, Placed } from "../../core/print/kit";
 import { blockPages, laizeText, quiltPages, rotaryPages, yardagePages } from "../../core/print/pages";
+import { embroideryPages, photoPages } from "../../core/print/photo";
+import { parseEmbroidery } from "../../core/embroidery/embroidery";
+import { readImageInfo } from "../../core/image/info";
 import { rotaryChart } from "../../core/print/rotary";
 import { letterName } from "../../core/print/shapes";
 import { blockSource, quiltSource, type PrintBlock, type QuiltElement } from "../../core/print/source";
@@ -26,7 +29,7 @@ import { Modal } from "./Modal";
 import { Check, NumberField } from "./fields";
 import { PrintPreview } from "./PrintPreview";
 
-export type PrintKind = "quilt" | "yardage" | "block" | "templates" | "foundation" | "rotary";
+export type PrintKind = "quilt" | "yardage" | "block" | "templates" | "foundation" | "rotary" | "photo" | "embroidery";
 
 export type PrintSubject =
   | { from: "plan"; block: BlockItem; coloring: number; sourceId: Id | null }
@@ -56,6 +59,7 @@ interface Options {
   blockOutlines: boolean;
   laize: number;
   fatQuarters: boolean;
+  bleed: boolean;
 }
 
 /** Les options de la dernière impression de chaque style (le temps de la session). */
@@ -86,6 +90,7 @@ function defaults(kind: PrintKind, unit: DisplayUnit): Options {
     blockOutlines: true,
     laize: unit === "cm" ? DEFAULT_LAIZE_CM / 2.54 : DEFAULT_LAIZE_IN,
     fatQuarters: false,
+    bleed: false,
   };
 }
 
@@ -201,6 +206,7 @@ export function PrintDialog({ kind, subject, unit, notify, onClose }: Props) {
   const [busy, setBusy] = useState(false);
 
   const isBlockKind = kind === "block" || kind === "templates" || kind === "foundation" || kind === "rotary";
+  const isItemKind = kind === "photo" || kind === "embroidery";
   const mirror = (kind === "block" || kind === "templates" || kind === "foundation") && o.mirror;
   const size = custom.on ? { width: custom.w, height: custom.h } : null;
 
@@ -244,6 +250,22 @@ export function PrintDialog({ kind, subject, unit, notify, onClose }: Props) {
         const fq = unit === "cm" ? FAT_QUARTER_CM : FAT_QUARTER_IN;
         const r = yardagePages(quiltCutRects(scene, o.seam), shownName, ctx, { width: o.laize, seam: o.seam, fatQuarters: o.fatQuarters, fatQuarter: fq, laizeText: laizeText(o.laize, unit) });
         return { doc: { title, pages: r.pages }, placed: null, message: null };
+      }
+      if (isItemKind) {
+        if (subject.from !== "quilt" || subject.element.kind !== kind || !subject.element.refId) return empty(fr.print.needSelection);
+        const w = custom.on ? custom.w : subject.element.width;
+        const h = custom.on ? custom.h : subject.element.height;
+        if (kind === "photo") {
+          const photo = project.sketchbook.photos.find((p) => p.id === (subject.element.refId as string));
+          const bytes = photo ? current.assets.get(photo.asset) : undefined;
+          if (!photo || !bytes) return empty(fr.print.unavailable);
+          const info = readImageInfo(bytes);
+          return { doc: { title, pages: photoPages(ctx, shownName, photo, { width: info.width / photo.ppi, height: info.height / photo.ppi }, w, h, o.copies, { bleed: o.bleed ? 1 / 16 : 0 }) }, placed: null, message: null };
+        }
+        const item = project.sketchbook.embroideries.find((x) => x.id === (subject.element.refId as string));
+        const emb = item ? parseEmbroidery(item.content) : null;
+        if (!emb) return empty(fr.print.unavailable);
+        return { doc: { title, pages: embroideryPages(ctx, shownName, emb, w, h, { lineWidth: o.lineWidth, ...(subject.element.thread ? { thread: subject.element.thread } : {}), copies: o.copies }) }, placed: null, message: null };
       }
       if (!block) return empty(fr.print.needSelection);
       if ((kind === "templates" || kind === "foundation" || kind === "rotary") && block.invalid && block.invalid.length > 0) return empty(fr.print.selfIntersect(block.invalid.length));
@@ -389,7 +411,7 @@ export function PrintDialog({ kind, subject, unit, notify, onClose }: Props) {
               </div>
             </fieldset>
 
-            {isBlockKind && (
+            {(isBlockKind || isItemKind) && (
               <fieldset className="prefs-group">
                 <legend>{fr.print.size}</legend>
                 <label className="radio">
@@ -406,6 +428,14 @@ export function PrintDialog({ kind, subject, unit, notify, onClose }: Props) {
                 </div>
               </fieldset>
             )}
+
+            {kind === "photo" && (
+              <fieldset className="prefs-group">
+                <legend>{fr.print.style}</legend>
+                <Check label={fr.m9.photos.bleed} checked={o.bleed} testId="print-opt-bleed" onChange={(v) => set("bleed", v)} />
+              </fieldset>
+            )}
+            {kind === "embroidery" && <fieldset className="prefs-group">{lineWidths}</fieldset>}
 
             {kind === "block" && (
               <fieldset className="prefs-group">

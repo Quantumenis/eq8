@@ -83,6 +83,10 @@ import { printContext } from "../printSettings";
 import { currentProjectName } from "../projectActions";
 import { PrintPalette } from "./PrintPalette";
 import { TextPanel } from "./TextPanel";
+import { PatchworkPanel, type PatchworkPreview } from "./PatchworkPanel";
+import { addEmbroideryItem, addPhotoItem, setEmbroideryOptions } from "../../core/quilt/ops";
+import { parseEmbroidery } from "../../core/embroidery/embroidery";
+import { fabricTiles } from "../fabricTiles";
 import { installFontLookup, subscribeFonts } from "../fonts";
 import { DEFAULT_TEXT, type TextSpec } from "../../core/text/glyphs";
 import { textBlockOf } from "../../core/text/registry";
@@ -92,7 +96,7 @@ import { ExportImageDialog, SelectionDialog, type Picture } from "./ExportDialog
 
 type BlockTool = "set" | "eyedropperBlock" | "rotate" | "mirror" | "erase" | "adjust" | "symmetry" | "tape";
 type PaintTool = "brush" | "spray" | "selectSpray" | "swap" | "selectSwap" | "fussy" | "rotateFabric" | "eyedropperFabric" | "eyedropperColor" | "randomize";
-type Tool = BlockTool | PaintTool | "text";
+type Tool = BlockTool | PaintTool | "text" | "photo" | "embroidery" | "thread";
 
 const BLOCK_TOOLS: BlockTool[] = ["set", "eyedropperBlock", "rotate", "mirror", "erase", "adjust", "symmetry", "tape"];
 const PAINT_TOOLS: PaintTool[] = ["brush", "spray", "selectSpray", "swap", "selectSwap", "fussy", "rotateFabric", "eyedropperFabric", "eyedropperColor", "randomize"];
@@ -165,6 +169,11 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   const [gestureTick, setGestureTick] = useState(0);
   const [hoverSlot, setHoverSlot] = useState<string | null>(null);
   const [tapeText, setTapeText] = useState("");
+  // Photos et broderies du carnet, Photo Patchwork.
+  const [chosenPhoto, setChosenPhoto] = useState<Id | null>(null);
+  const [chosenEmb, setChosenEmb] = useState<Id | null>(null);
+  const [embRender, setEmbRender] = useState<"draft" | "3d">("draft");
+  const [patch, setPatch] = useState<PatchworkPreview | null>(null);
   // Texte en applique : les polices arrivent après coup, la scène est alors recalculée.
   const [fontTick, setFontTick] = useState(0);
   useEffect(() => {
@@ -258,7 +267,8 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gestureTick, draft, options.snapPosition, options.snapSize, options.snapStep]);
 
-  const shownDraft = previewDraft ?? draft;
+  const baseShown = previewDraft ?? draft;
+  const shownDraft = patch?.fills ? { ...baseShown, fills: { ...baseShown.fills, ...patch.fills } } : baseShown;
   const selectedText = (() => {
     const only = liveSelectedIds(shownDraft, selected);
     return only && only.text ? only : null;
@@ -597,6 +607,44 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
       notify(fr.quilt.borders.auto.applied(preset.name));
       return;
     }
+    if (tool === "photo") {
+      const photo = project.sketchbook.photos.find((p) => p.id === chosenPhoto);
+      if (!photo) return notify(fr.m9.photos.pick);
+      if (layer === 3 || (layer === 1 && layoutKind !== "custom")) return notify(fr.m9.photos.notHere);
+      const view = fabricTiles.photoOf(photo, project, current.assets);
+      const w = view ? view.widthPx / photo.ppi : 6;
+      const h = view ? view.heightPx / photo.ppi : 4;
+      let id: Id | null = null;
+      execute(fr.m9.photos.history, (d) => {
+        const r = addPhotoItem(d, project, { layer: layer as 1 | 2, photoId: photo.id, x: info.world.x - w / 2, y: info.world.y - h / 2, w, h });
+        id = r.id;
+        return r.draft;
+      });
+      if (id) setSelected([id]);
+      return;
+    }
+    if (tool === "embroidery") {
+      const item = project.sketchbook.embroideries.find((e) => e.id === chosenEmb);
+      const emb = item ? parseEmbroidery(item.content) : null;
+      if (!item || !emb) return notify(fr.m9.embroidery.pick);
+      if (layer !== 3) return notify(fr.m9.embroidery.layer3);
+      let id: Id | null = null;
+      execute(fr.m9.embroidery.history, (d) => {
+        const r = addEmbroideryItem(d, project, { embroideryId: item.id, x: info.world.x - emb.width / 2, y: info.world.y - emb.height / 2, w: emb.width, h: emb.height, render: embRender });
+        id = r.id;
+        return r.draft;
+      });
+      if (id) setSelected([id]);
+      return;
+    }
+    if (tool === "thread") {
+      const hit = itemAtPoint(sceneRef.current, info.world, 3);
+      if (!hit?.item.embroidery) return;
+      const rgb = paintStore.get().thread?.rgb;
+      if (!rgb) return notify(fr.m9.embroidery.needThread);
+      execute(fr.m9.embroidery.threadHistory, (d) => setEmbroideryOptions(d, hit.item.id, { thread: rgb }));
+      return;
+    }
     if (tool === "text") {
       if (layer !== 2) return notify(fr.textTool.layerOnly);
       if (info.shift) {
@@ -663,7 +711,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
         if (item) {
           const ids = info.ctrl ? draft.doc.items.filter((i) => i.layer === layer).map((i) => i.id) : [item.item.id];
           return execute(fr.quilt.history.turn, (d) =>
-            updateItems(d, ids, (i) => (tool === "rotate" ? { rot: (((i.rot + 1) % 4) as 0 | 1 | 2 | 3) } : { flip: !i.flip })),
+            updateItems(d, ids, (i) => (i.photoId ? {} : tool === "rotate" ? { rot: (((i.rot + 1) % 4) as 0 | 1 | 2 | 3) } : { flip: !i.flip })),
           );
         }
         if (layer !== 1) return;
@@ -725,7 +773,10 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     }
     if (info.kind !== "down") return;
     const piece = pieceAtPoint(sceneRef.current, info.world, layer);
-    setPrintOwner(piece && !hidden.has(piece.layer) ? piece.owner : null);
+    if (piece && !hidden.has(piece.layer)) return setPrintOwner(piece.owner);
+    // Une photo ou une broderie n'a pas de pièces : on la choisit par son cadre.
+    const placed = itemAtPoint(sceneRef.current, info.world, layer);
+    setPrintOwner(placed && (placed.item.photoId || placed.item.embroidery) && !hidden.has(placed.item.layer) ? placed.item.id : null);
   };
 
   const adjustDown = (info: PointerInfo) => {
@@ -857,7 +908,8 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   const printElement = useMemo(() => (tab === 4 && printOwner ? quiltElement(scene, project, printOwner, fr.print.roles) : null), [tab, printOwner, scene, project]);
   const printEnabled = useMemo(() => {
     const kinds = new Set<PrintKind>(["quilt", "yardage"]);
-    if (printElement) {
+    if (printElement?.kind) kinds.add(printElement.kind);
+    else if (printElement) {
       kinds.add("block").add("templates").add("foundation");
       const pb = quiltSource(scene, printElement.owner, printElement.name, null, false);
       if (pb && rotaryChart(pb, 0.25, "1/16", unit).cuts.length > 0) kinds.add("rotary");
@@ -897,6 +949,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     highlight: new Set(liveSpray) as ReadonlySet<string>,
     focusKey: tool === "fussy" ? focusKey : null,
     ghost: null,
+    ghostPhoto: patch?.ghost ?? null,
     hoverPoly,
     stroke: gs?.kind === "stroke" ? sampleStroke(gs.style === "freehand" ? "freehand" : gs.style, gs.points, 0.2) : null,
     tape: gs?.kind === "tape" ? { a: gs.a, b: gs.b } : null,
@@ -1241,6 +1294,84 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
       {blockPalette}
       <AutoBorders active={autoPreset?.id ?? null} onPick={(p) => setAutoPreset(p)} />
       {adjustPanel}
+      <div className="palette-group" role="group" aria-label={fr.m9.photos.tools} data-testid="photo-tools">
+        <h3>{fr.m9.photos.tools}</h3>
+        {project.sketchbook.photos.length === 0 ? (
+          <p className="palette-hint">{fr.m9.photos.none}</p>
+        ) : (
+          <select value={chosenPhoto ?? ""} data-testid="photo-choice" onChange={(e) => setChosenPhoto(e.target.value || null)}>
+            <option value="">—</option>
+            {project.sketchbook.photos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.card.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <div className="tool-grid">
+          <button type="button" className="tool-button" data-testid="qtool-photo" aria-pressed={tool === "photo"} onClick={() => setTool("photo")}>
+            {fr.m9.photos.place}
+          </button>
+          <button type="button" className="tool-button" onClick={() => setTool("adjust")} aria-pressed={tool === "adjust"} data-testid="qtool-photo-adjust">
+            {fr.textTool.adjust}
+          </button>
+        </div>
+        {tool === "photo" && <p className="palette-hint">{fr.m9.photos.help}</p>}
+      </div>
+      <div className="palette-group" role="group" aria-label={fr.m9.embroidery.tools} data-testid="embroidery-tools">
+        <h3>{fr.m9.embroidery.tools}</h3>
+        {project.sketchbook.embroideries.length === 0 ? (
+          <p className="palette-hint">{fr.m9.embroidery.none}</p>
+        ) : (
+          <select value={chosenEmb ?? ""} data-testid="embroidery-choice" onChange={(e) => setChosenEmb(e.target.value || null)}>
+            <option value="">—</option>
+            {project.sketchbook.embroideries.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.card.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <label className="field">
+          <span className="field-label">{fr.m9.embroidery.render}</span>
+          <select
+            value={embRender}
+            data-testid="embroidery-render"
+            onChange={(e) => {
+              const render = e.target.value as "draft" | "3d";
+              setEmbRender(render);
+              const only = selectedItem();
+              if (only?.embroidery) execute(fr.m9.embroidery.renderHistory, (d) => setEmbroideryOptions(d, only.id, { render }));
+            }}
+          >
+            <option value="draft">{fr.m9.embroidery.renders.draft}</option>
+            <option value="3d">{fr.m9.embroidery.renders["3d"]}</option>
+          </select>
+        </label>
+        <div className="tool-grid">
+          <button type="button" className="tool-button" data-testid="qtool-embroidery" aria-pressed={tool === "embroidery"} onClick={() => setTool("embroidery")}>
+            {fr.m9.embroidery.place}
+          </button>
+          <button type="button" className="tool-button" data-testid="qtool-thread" aria-pressed={tool === "thread"} onClick={() => setTool("thread")}>
+            {fr.m9.embroidery.thread}
+          </button>
+        </div>
+        {(tool === "embroidery" || tool === "thread") && <p className="palette-hint">{tool === "thread" ? fr.m9.embroidery.threadHelp : fr.m9.embroidery.help}</p>}
+      </div>
+      {layoutKind === "onepatch" && (
+        <PatchworkPanel
+          project={project}
+          assets={current.assets}
+          scene={scene}
+          unit={unit}
+          notify={notify}
+          onPreview={setPatch}
+          onApply={(fills) => {
+            execute(fr.m9.patchwork.history, (d) => ({ doc: d.doc, fills: { ...d.fills, ...fills } }));
+            setPatch(null);
+          }}
+        />
+      )}
       <div className="palette-group" role="group" aria-label={fr.textTool.title}>
         <h3>{fr.textTool.title}</h3>
         <div className="tool-grid">

@@ -6,6 +6,7 @@ import { fr } from "../i18n/fr";
 import { useSession } from "../projectSession";
 import { Modal } from "./Modal";
 import { MIN_LINE_CHOICES, printSettings, usePrintSettings } from "../printSettings";
+import { setUiPrefs, useUiPrefs } from "../uiPrefs";
 
 interface Props {
   prefs: Prefs;
@@ -19,6 +20,7 @@ export function Preferences({ prefs, onChange, onReset, onSavePalette, onClose }
   const session = useSession();
   const [alsoPalette, setAlsoPalette] = useState(false);
   const print = usePrintSettings();
+  const ui = useUiPrefs();
 
   const changeColorings = (raw: string) => {
     const value = clampMaxColorings(Number(raw));
@@ -68,6 +70,26 @@ export function Preferences({ prefs, onChange, onReset, onSavePalette, onClose }
           onChange={(e) => changeColorings(e.target.value)}
         />
         <p className="muted">{fr.prefs.coloringsHelp}</p>
+      </fieldset>
+
+      <fieldset className="prefs-group" data-testid="prefs-display">
+        <legend>{fr.m9.prefs.display}</legend>
+        <label className="radio">
+          <input type="checkbox" checked={ui.sideRibbon} data-testid="prefs-side-ribbon" onChange={(e) => setUiPrefs({ sideRibbon: e.target.checked })} />
+          {fr.m9.prefs.sideRibbon}
+        </label>
+        <label className="radio">
+          <input type="checkbox" checked={ui.smallIcons} data-testid="prefs-small-icons" onChange={(e) => setUiPrefs({ smallIcons: e.target.checked })} />
+          {fr.m9.prefs.smallIcons}
+        </label>
+        <label className="radio">
+          <input type="checkbox" checked={ui.hideTips} data-testid="prefs-hide-tips" onChange={(e) => setUiPrefs({ hideTips: e.target.checked })} />
+          {fr.m9.prefs.hideTips}
+        </label>
+        <label className="radio">
+          <input type="checkbox" checked={ui.showHome} data-testid="prefs-show-home" onChange={(e) => setUiPrefs({ showHome: e.target.checked })} />
+          {fr.m9.prefs.showHome}
+        </label>
       </fieldset>
 
       <fieldset className="prefs-group">

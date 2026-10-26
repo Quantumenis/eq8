@@ -145,6 +145,11 @@ export interface QuiltElement {
   height: number;
   /** Contour dans le repère du centre (mise en évidence en vert). */
   outline: Pt[];
+  /** Photo ou broderie posée (SPEC §9.9) : ni pièces ni gabarits, mais une impression à sa taille. */
+  kind?: "photo" | "embroidery";
+  /** Identifiant de la photo ou de la broderie du carnet, et le fil choisi pour une broderie. */
+  refId?: string;
+  thread?: string;
 }
 
 /** Le repère redressé d'un élément du quilt : son côté « haut » devient horizontal. */
@@ -186,6 +191,15 @@ function elementPieces(scene: Scene, owner: string): { pieces: ScenePiece[]; mat
 
 /** Description de l'élément cliqué du quilt : nom, taille finie, contour. */
 export function quiltElement(scene: Scene, project: Project, owner: string, names: Record<string, string>): QuiltElement | null {
+  const placed = scene.items.find((i) => i.item.id === owner);
+  if (placed?.item.photoId) {
+    const photo = project.sketchbook.photos.find((p) => p.id === placed.item.photoId);
+    return { owner, name: photo?.card.name ?? "", width: placed.item.w, height: placed.item.h, outline: placed.poly, kind: "photo", refId: placed.item.photoId };
+  }
+  if (placed?.item.embroidery) {
+    const emb = project.sketchbook.embroideries.find((x) => x.id === placed.item.embroidery?.id);
+    return { owner, name: emb?.card.name ?? "", width: placed.item.w, height: placed.item.h, outline: placed.poly, kind: "embroidery", refId: placed.item.embroidery.id, ...(placed.item.embroidery.thread ? { thread: placed.item.embroidery.thread } : {}) };
+  }
   const e = elementPieces(scene, owner);
   if (!e) return null;
   const ref = e.pieces.find((p) => p.ref)?.ref;

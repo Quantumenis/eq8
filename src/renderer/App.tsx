@@ -13,6 +13,9 @@ import { fr } from "./i18n/fr";
 import { BlockIcon, ImageIcon, LogoIcon, QuiltIcon } from "./icons";
 import { Library } from "./components/Library";
 import { ImageWorkspace, type ImageRequests } from "./components/ImageWorkspace";
+import { HelpDialog, HomeScreen, type HomeAction } from "./components/HomeHelp";
+import { ItemLibraryDialog, type ItemLibraryKind } from "./components/ItemLibraryDialog";
+import { getUiPrefs, useUiPrefs } from "./uiPrefs";
 import { addCurrentBlock, cleanupReport, editBlockFromSketchbook } from "./blockActions";
 import { blockEditor, useBlockEditor } from "./blockEditor";
 import { addCurrentQuilt, editQuiltFromSketchbook } from "./quiltActions";
@@ -26,7 +29,15 @@ import { printSettings, usePrintSettings } from "./printSettings";
 import { FontsDialog, PageSetupDialog } from "./components/PrintSettingsDialogs";
 
 type Worktable = "quilt" | "block" | "image";
-type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "library"; library: LibraryKind } | { kind: "prefs" } | null;
+type ModalState =
+  | { kind: "helper"; tab: "create" | "open" }
+  | { kind: "sketchbook" }
+  | { kind: "library"; library: LibraryKind }
+  | { kind: "items"; items: ItemLibraryKind }
+  | { kind: "home" }
+  | { kind: "help" }
+  | { kind: "prefs" }
+  | null;
 
 const WORKTABLES: { id: Worktable; icon: ReactNode }[] = [
   { id: "quilt", icon: <QuiltIcon /> },
@@ -63,6 +74,7 @@ function Workspace() {
   const [notice, setNotice] = useState("");
   const [recovery, setRecovery] = useState<RecoveryInfo | null>(null);
   const printState = usePrintSettings();
+  const ui = useUiPrefs();
   const countryRef = useRef("");
   const noticeTimer = useRef<number | undefined>(undefined);
 
@@ -101,7 +113,9 @@ function Workspace() {
         // Palette illisible : contenu d'origine.
       }
       session.load(newProject(palette, loadedPrefs.maxColorings), null);
-      setRecovery(await api.checkRecovery());
+      const pending = await api.checkRecovery();
+      setRecovery(pending);
+      if (!pending && getUiPrefs().showHome) setModal({ kind: "home" });
     })();
     return () => {
       cancelled = true;
@@ -180,6 +194,16 @@ function Workspace() {
           setWorktable("image");
           setRibbonTab((prev) => ({ ...prev, image: 0 }));
           return setImageRequests((r) => ({ ...r, importImage: r.importImage + 1 }));
+        case "show-embroidery-library":
+          return setModal({ kind: "items", items: "embroideries" });
+        case "show-layout-library":
+          return setModal({ kind: "items", items: "layouts" });
+        case "open-quick-quilt":
+          return setModal({ kind: "items", items: "quick" });
+        case "show-home":
+          return setModal({ kind: "home" });
+        case "show-help":
+          return setModal({ kind: "help" });
         case "preferences":
           return setModal({ kind: "prefs" });
         case "save-default-palette":
@@ -242,7 +266,10 @@ function Workspace() {
   const name = currentProjectName();
 
   return (
-    <div className="app" data-worktable={worktable}>
+    <div className="app" data-worktable={worktable} data-ribbon={ui.sideRibbon ? "side" : "top"} data-icons={ui.smallIcons ? "small" : "normal"} data-tips={ui.hideTips ? "off" : "on"}>
+      <a className="skip-link" href="#main-content" onClick={(e) => { e.preventDefault(); document.querySelector<HTMLElement>("[data-testid=worktable]")?.focus(); }}>
+        {fr.m9.skip}
+      </a>
       <header className="topbar">
         <div className="brand">
           <LogoIcon />
@@ -294,6 +321,12 @@ function Workspace() {
           </button>
           <button type="button" className="btn btn--small" data-testid="tool-fabric-library" title={fr.library.openFabricsTitle} onClick={() => setModal({ kind: "library", library: "fabrics" })}>
             {fr.library.openFabrics}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-home" onClick={() => setModal({ kind: "home" })}>
+            {fr.m9.home.show}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-help" onClick={() => setModal({ kind: "help" })}>
+            {fr.m9.help.open}
           </button>
           <button type="button" className="btn btn--small" data-testid="tool-thread-library" title={fr.library.openThreadsTitle} onClick={() => setModal({ kind: "library", library: "threads" })}>
             {fr.library.openThreads}
@@ -416,6 +449,28 @@ function Workspace() {
       )}
       {modal?.kind === "library" && (
         <Library key={modal.library} kind={modal.library} unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} onClose={() => setModal(null)} />
+      )}
+      {modal?.kind === "items" && <ItemLibraryDialog kind={modal.items} notify={notify} onAdded={actions.afterAddToSketchbook} ensureSaved={() => actions.ensureSaved()} onClose={() => setModal(null)} />}
+      {modal?.kind === "help" && <HelpDialog onClose={() => setModal(null)} />}
+      {modal?.kind === "home" && (
+        <HomeScreen
+          onClose={() => setModal(null)}
+          onAction={(a: HomeAction) => {
+            setModal(null);
+            if (a === "new-quilt") {
+              setWorktable("quilt");
+              setRibbonTab((prev) => ({ ...prev, quilt: 0 }));
+            } else if (a === "quick-quilt") setModal({ kind: "items", items: "quick" });
+            else if (a === "open-project") setModal({ kind: "helper", tab: "open" });
+            else if (a === "new-block") {
+              setWorktable("block");
+              setRibbonTab((prev) => ({ ...prev, block: 0 }));
+            } else if (a === "search-blocks") setModal({ kind: "library", library: "blocks" });
+            else if (a === "edit-fabric") runCommand("import-image");
+            else if (a === "search-fabrics") setModal({ kind: "library", library: "fabrics" });
+            else if (a === "help") setModal({ kind: "help" });
+          }}
+        />
       )}
       {modal?.kind === "prefs" && (
         <Preferences

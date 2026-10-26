@@ -5,6 +5,7 @@ import type { BorderStyle } from "../../core/quilt/borders";
 import type { AutoCategory } from "../../core/quilt/borderpresets";
 import type { ProjectNameProblem } from "../../core/project/names";
 import type { FileError } from "../../shared/api";
+import { m9 } from "./m9";
 import { shape, textTool } from "./shape";
 
 const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
@@ -576,6 +577,8 @@ export const fr = {
     color: "Couleur",
     tileSize: (size: string) => `Motif répété tous les ${size}`,
     addedItems: (n: number, kind: string) => `${n} ${plural(n, kind, `${kind}s`)} ${plural(n, "ajouté", "ajoutés")} au carnet.`,
+    importProject: "Importer depuis un projet…",
+    importProjectFailed: "Ce projet n'a pas pu être lu.",
     searchDialog: {
       title: "Rechercher",
       run: "Rechercher",
@@ -1030,6 +1033,8 @@ export const fr = {
       embroidery: "Broderie",
     },
     dialogTitles: {
+      photo: "Imprimer une photo",
+      embroidery: "Imprimer une broderie",
       quilt: "Imprimer le quilt",
       yardage: "Métrage",
       block: "Imprimer un bloc",
@@ -1181,4 +1186,5 @@ export const fr = {
   },
   shape,
   textTool,
+  m9,
 } as const;

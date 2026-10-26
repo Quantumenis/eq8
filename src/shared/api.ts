@@ -107,7 +107,12 @@ export type MenuCommand =
   | "preferences"
   | "save-default-palette"
   | "page-setup"
-  | "print-fonts";
+  | "print-fonts"
+  | "show-embroidery-library"
+  | "show-layout-library"
+  | "open-quick-quilt"
+  | "show-home"
+  | "show-help";
 
 export interface QuiltStudioApi {
   getAppInfo(): Promise<AppInfo>;

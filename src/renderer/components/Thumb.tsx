@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { AnyItem, BlockItem, ListKey, Paint, QuiltItem } from "../../core/project/model";
+import type { AnyItem, BlockItem, ListKey, Paint, Project, QuiltItem } from "../../core/project/model";
 import { displayColor } from "../../core/draw/coloring";
 import { parseDoc } from "../../core/quilt/doc";
 import { buildScene } from "../../core/quilt/scene";
@@ -98,10 +98,10 @@ export function BlockSvg({ block, coloringIndex, fillOf = defaultFillOf }: { blo
 }
 
 /** Un quilt du carnet en vignette : ses pièces aplaties, chacune de sa couleur (la couleur moyenne pour un tissu). */
-export function QuiltSvg({ quilt }: { quilt: QuiltItem }) {
+export function QuiltSvg({ quilt, project = session.project }: { quilt: QuiltItem; project?: Project }) {
   const doc = parseDoc(quilt.layout);
   if (!doc) return null;
-  const scene = buildScene(session.project, { doc, fills: quilt.fills });
+  const scene = buildScene(project, { doc, fills: quilt.fills });
   const b = scene.bounds;
   const bw = b.x1 - b.x0;
   const bh = b.y1 - b.y0;
@@ -112,7 +112,7 @@ export function QuiltSvg({ quilt }: { quilt: QuiltItem }) {
       {scene.pieces
         .filter((p) => !p.lineOnly)
         .map((p, i) => (
-          <polygon key={i} points={p.poly.map((q) => `${q.x},${q.y}`).join(" ")} fill={displayColor(session.project, p.paint) ?? "var(--sheet)"} stroke="#24262b" strokeWidth={unit / 400} strokeLinejoin="round" />
+          <polygon key={i} points={p.poly.map((q) => `${q.x},${q.y}`).join(" ")} fill={displayColor(project, p.paint) ?? "var(--sheet)"} stroke="#24262b" strokeWidth={unit / 400} strokeLinejoin="round" />
         ))}
     </svg>
   );

@@ -289,3 +289,53 @@ button:focus-visible {
   border-color: var(--accent);
   color: #fff;
 }
+
+/* Personnalisation de l'interface (SPEC §12.6) */
+.app[data-ribbon="side"] {
+  grid-template-columns: max-content 1fr;
+  grid-template-rows: auto 1fr auto;
+}
+
+.app[data-ribbon="side"] > .topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.app[data-ribbon="side"] > .ribbon {
+  grid-column: 1;
+  grid-row: 2;
+  flex-direction: column;
+  padding: 8px 0 0;
+  border-bottom: none;
+  border-right: 3px solid var(--accent);
+}
+
+.app[data-ribbon="side"] > .ribbon .ribbon-tab {
+  text-align: left;
+  border-radius: 4px 0 0 4px;
+  padding: 8px 14px;
+}
+
+.app[data-ribbon="side"] > .body {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.app[data-ribbon="side"] > .statusbar {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.app[data-icons="small"] .worktable-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.app[data-icons="small"] .worktable-button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.app[data-tips="off"] .palette-hint {
+  display: none;
+}
