@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { strFromU8, unzipSync } from "fflate";
-import { createProject, drag, killAllApps, launch, makeSandbox, openBlockEditor, openSketchbook, pagePoint, segments, type Sandbox } from "./helpers";
+import { createProject, drag, killAllApps, launch, makeSandbox, openBlockEditor, openSketchbook, pagePoint, segments, stubSaveChangesAnswer, type Sandbox } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -208,5 +208,6 @@ test("bibliothèque : sélection multiple, ajout, dépilage avec Scinder", async
   await page.getByTestId("split-colorings").click();
   await expect(page.getByTestId("sketchbook-item")).toHaveCount(3);
   await expect(page.getByTestId("sketchbook").getByTestId("coloring-indicator")).toHaveText("1 sur 1");
+  await stubSaveChangesAnswer(app, 1); // la scission laisse le projet modifié : pas de boîte « Enregistrer ? » à attendre
   await app.close();
 });

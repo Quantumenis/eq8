@@ -163,6 +163,8 @@ export interface QuiltStudioApi {
 
   /** Octets d'une police système (liste fermée de familles), pour l'intégrer au PDF. */
   readSystemFont(family: string, bold: boolean): Promise<Uint8Array | null>;
+  /** Le projet passé en argument au lancement (double-clic sur un .qsp) : rendu une seule fois. */
+  takeStartupFile(): Promise<string | null>;
   /** Les polices TrueType installées sur le PC (texte en applique), triées par famille. */
   listInstalledFonts(): Promise<InstalledFontInfo[]>;
   /** Octets d'une variante d'une police installée (seules celles de la liste sont lisibles). */
@@ -209,6 +211,7 @@ export const IPC = {
   getDefaultPalette: "palette:get",
   saveDefaultPalette: "palette:save",
   readSystemFont: "print:read-font",
+  takeStartupFile: "app:take-startup-file",
   listInstalledFonts: "print:list-fonts",
   readInstalledFont: "print:read-installed-font",
   exportFile: "print:export-file",

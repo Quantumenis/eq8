@@ -113,6 +113,11 @@ function Workspace() {
         // Palette illisible : contenu d'origine.
       }
       session.load(newProject(palette, loadedPrefs.maxColorings), null);
+      const startup = await api.takeStartupFile();
+      if (startup) {
+        await actionsRef.current.openPath(startup);
+        return;
+      }
       const pending = await api.checkRecovery();
       setRecovery(pending);
       if (!pending && getUiPrefs().showHome) setModal({ kind: "home" });
@@ -351,7 +356,22 @@ function Workspace() {
         </div>
       </header>
 
-      <nav className="ribbon" role="tablist" aria-label="Ruban">
+      <nav
+        className="ribbon"
+        role="tablist"
+        aria-label="Ruban"
+        aria-orientation={ui.sideRibbon ? "vertical" : "horizontal"}
+        onKeyDown={(e) => {
+          // Flèches : l'onglet voisin (accessibilité au clavier).
+          const keys = ui.sideRibbon ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"];
+          const step = e.key === keys[0] ? -1 : e.key === keys[1] ? 1 : e.key === "Home" ? -99 : e.key === "End" ? 99 : 0;
+          if (step === 0) return;
+          e.preventDefault();
+          const next = Math.max(0, Math.min(tabs.length - 1, step === -99 ? 0 : step === 99 ? tabs.length - 1 : activeTab + step));
+          setRibbonTab((prev) => ({ ...prev, [worktable]: next }));
+          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="tab-${next}"]`)?.focus());
+        }}
+      >
         {tabs.map((label, index) => (
           <button
             key={label}
@@ -360,6 +380,7 @@ function Workspace() {
             data-testid={`tab-${index}`}
             className="ribbon-tab"
             aria-selected={index === activeTab}
+            tabIndex={index === activeTab ? 0 : -1}
             onClick={() => setRibbonTab((prev) => ({ ...prev, [worktable]: index }))}
           >
             {label}

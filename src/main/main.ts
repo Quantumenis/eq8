@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import path from "node:path";
 import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
@@ -14,7 +15,7 @@ import {
 import { handle } from "./ipc.js";
 import { registerLibraryIpc } from "./library.js";
 import { registerPrintIpc } from "./print.js";
-import { registerProjectIpc } from "./projects.js";
+import { allowProjectFile, registerProjectIpc } from "./projects.js";
 import {
   DEFAULT_PREFERENCES,
   applyDataDirOverride,
@@ -38,6 +39,19 @@ const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 let documentState: DocumentState = { name: "Sans titre", modified: false };
 let closeConfirmed = false;
+
+/** Le premier argument qui désigne un fichier de projet existant (double-clic sur un .qsp). */
+export function projectFromArgv(argv: readonly string[]): string | null {
+  for (const arg of argv.slice(1)) {
+    if (/\.qsp$/i.test(arg) && fsSync.existsSync(arg)) {
+      allowProjectFile(arg);
+      return path.resolve(arg);
+    }
+  }
+  return null;
+}
+
+let startupFile: string | null = null;
 
 function windowTitle(): string {
   return `${APP_NAME} — ${documentState.name}${documentState.modified ? " *" : ""}`;
@@ -205,6 +219,11 @@ async function buildMenu(): Promise<void> {
 }
 
 function registerIpc(): void {
+  handle(IPC.takeStartupFile, (): string | null => {
+    const file = startupFile;
+    startupFile = null;
+    return file;
+  });
   handle(IPC.getAppInfo, (): AppInfo => ({ name: APP_NAME, version: app.getVersion(), autosaveMs: autosaveIntervalMs(), country: app.getLocaleCountryCode() || "" }));
   handle(IPC.setTheme, (_event, mode: unknown) => {
     if (mode === "light" || mode === "dark" || mode === "system") {
@@ -268,9 +287,12 @@ app.setAppUserModelId("app.quiltstudio.desktop");
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  startupFile = projectFromArgv(process.argv);
+  app.on("second-instance", (_event, argv) => {
     if (mainWindow?.isMinimized()) mainWindow.restore();
     mainWindow?.focus();
+    const file = projectFromArgv(argv);
+    if (file) sendCommand("open-recent", file);
   });
 
   void app.whenReady().then(async () => {

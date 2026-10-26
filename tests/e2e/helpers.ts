@@ -52,9 +52,9 @@ export async function killAllApps(): Promise<void> {
   openApps.clear();
 }
 
-export async function launch(sandbox: Sandbox, options: { autosaveMs?: number; env?: Record<string, string> } = {}): Promise<Launched> {
+export async function launch(sandbox: Sandbox, options: { autosaveMs?: number; env?: Record<string, string>; args?: string[] } = {}): Promise<Launched> {
   const app = await electron.launch({
-    args: [ROOT],
+    args: [ROOT, ...(options.args ?? [])],
     cwd: ROOT,
     env: {
       ...process.env,

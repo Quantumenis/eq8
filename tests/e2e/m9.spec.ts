@@ -234,3 +234,15 @@ test("préférences d'affichage : ruban sur le côté, petites icônes, astuces 
   expect(existsSync(sandbox.root)).toBe(true);
   await app.close();
 });
+
+test("double-clic sur un .qsp : le projet passé en argument s'ouvre au démarrage", async () => {
+  // Un projet créé dans une première session, puis rouvert par son chemin comme le fait l'Explorateur.
+  const first = await launch(sandbox);
+  await createProject(first.page, "Associe");
+  await first.app.close();
+  const file = sandbox.projectFile("Associe");
+  expect(existsSync(file)).toBe(true);
+  const second = await launch(sandbox, { args: [file] });
+  await expect(second.page.getByTestId("project-name")).toContainText("Associe");
+  await second.app.close();
+});

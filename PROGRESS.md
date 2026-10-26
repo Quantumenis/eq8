@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M8 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
+> Tous les jalons M0 à M9 sont faits. Suite possible : les lots optionnels « Après M9 » de `PLAN.md` (Serendipity, Baby Blocks, effets d'image…), à prioriser avec vous.
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -17,7 +17,7 @@
 | **M6 — Bordures** | ✅ terminé | 2026-10-26 |
 | **M7 — Impression et PDF à l'échelle, export, métrage** | ✅ terminé | 2026-10-26 |
 | **M8 — Applique, PolyDraw, blocs combinés, motifs, pochoirs et texte** | ✅ terminé | 2026-10-26 |
-| M9 — Plan Image complet, photos, broderies, finitions, installateur | ⏭️ prochain | — |
+| **M9 — Plan Image complet, photos, broderies, finitions, installateur** | ✅ terminé | 2026-10-26 |
 
 ## M1 — fait
 
@@ -377,6 +377,51 @@
 - Serendipity : non fait (P2, M9 ou après-M9). Pas de bloc clé / numérotation de fondation pour les pièces d'applique.
 - Dans l'interface, le texte au calque 2 : un clic dans le trou d'une lettre sélectionne quand même la lettre (la zone de clic du quilt est le contour extérieur).
 - Test e2e `coloring.spec.ts` « bibliothèque : sélection multiple… » : l'arrêt de l'application a dépassé une fois 60 s en suite complète (bibliothèque de 46 vignettes ouverte) ; il passe seul en 9 s.
+
+## M9 — fait
+
+**Cœur (TypeScript pur)**
+- `core/image/adjust.ts` : équilibre auto, décalages RVB, TSL, coloriser, accent, **carte des teintes** (12 secteurs de 30°), mélangeur de canaux, **gamme de couleurs** (1 à 4 couleurs dominantes en k-moyennes OKLab, palette toute faite / aléatoire, décalage d'attribution), histogramme, **égalisation** (RVB, YUV, gris), luminosité / contraste, 4 préréglages.
+- `core/quilt/photopatch.ts` : **Photo Patchwork** (Inside / Outside / Distort Fit, masque, couleur moyenne des pixels de chaque pièce → habillages du calque 1).
+- `core/library/categories.ts` : recherche par fiche (nom, référence, notes ; casse et accents ignorés) et par catégories (ET, 20 au plus), 5 sections de catégories, étiquettes de tous les éléments intégrés.
+- `core/embroidery/embroidery.ts` : format de broderie maison (tracés de points, en pouces) et **10 modèles** générés ; `core/library/quick.ts` : **10 quilts rapides** et **25 dispositions** rangées par taille.
+- `core/image/pagelayout.ts` + `core/print/photo.ts` : mise en page de photos (poser à la taille enregistrée, déplacer avec grille, redimensionner, pivoter ±90°, miroirs, préréglages, aligner, copier-coller, mosaïque) et impression d'une **photo** (une photo est un remplissage « tissu » `photo:<id>`, avec 1/16 po de débord en option), d'une **broderie** et de la page de mise en page.
+- Quilt : `FreeItem.photoId` et `FreeItem.embroidery` (calque 1 en Custom Set / calque 2 pour les photos, calque 3 pour les broderies), fils colorés et rendu brouillon ou 3D, `scene.photos`.
+
+**Interface**
+- Plan Image : boîtes **Couleurs…** (8 onglets, aperçu Avant / Après), **Histogramme…** (courbes, égaliser, préréglages, luminosité / contraste), **Mise en page de photos…** (page à l'échelle, glisser-déposer, impression et export PDF).
+- Plan Quilt (DESIGN) : outils de photo, outils de broderie (rendu, pinceau fil), panneau **Photo Patchwork** (One Patch), aperçu « Afficher la photo / Afficher le quilt », « Appliquer au calque 1 » ; IMPRIMER & EXPORTER : **Photo** et **Broderie** (un clic sur l'élément).
+- Bibliothèques : **Broderies**, **Dispositions**, **Quilts rapides** (menus et grille d'éléments), recherche par fiche et par catégories dans la bibliothèque de blocs, **Importer depuis un projet**.
+- Finitions : écran d'**accueil** (quilts, blocs, tissus, astuce du jour), **aide** intégrée (F1), **Préférences › Affichage** (ruban sur le côté, petites icônes, astuces masquées, accueil au démarrage), navigation aux flèches du ruban, focus visible, lien d'évitement ; **installateur NSIS** avec choix du dossier, raccourcis et **association `.qsp`** (double-clic = ouvrir le projet, y compris si l'application est déjà lancée) ; icône (le moulinet, générée par `tools/make-icon.mjs`) ; **README** complet.
+
+## Vérifications M9 (2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **422/422** (+ 1 ignoré) — dont 24 nouveaux : image unie rouge → pièces (255, 0, 0) ; moitié rouge / moitié bleue sur 2 × 1 pièces ; rectangles Inside / Outside / Distort ; carte des teintes 0-30° → 210° donne 210 ± 2° ; égalisation en gris → histogramme cumulé linéaire à 2 % ; « etoile » trouve « Étoile » ; ET sur 2 catégories ; 10 broderies relues ; photos au calque 1 refusées hors Custom Set ; 10 quilts rapides (blocs posés partout) ; 25 dispositions ; mise en page de photos ; photo de 4 × 3 po = 288 × 216 pt dans le PDF et mosaïque à 12 × 9 po |
+| `npm run e2e` | **52/52** — dont 8 nouveaux : `m9.spec.ts` (couleur + histogramme + annuler + mise en page exportée en PDF ; Photo Patchwork ; photo au calque 2 et broderie 3D au calque 3 enregistrées avec le quilt, capture `m9-photo-broderie.png` ; recherche par catégories et par texte, quilt rapide, accueil, aide ; préférences d'affichage ; double-clic sur un `.qsp`), `perf.spec.ts` (**quilt de 20 × 20 Ohio Star avec tissus image : ≈ 42 ms** après un zoom, mesuré sur deux images, pour un seuil de 100 ms ; **projet de 50 Mo : 0,43 s** à l'ouverture, pour un seuil de 3 s) |
+| `npm run dist` / `e2e:dist` | 2 exe / 3/3 |
+| `tools\test-installer.ps1` | installation silencieuse `/S` dans un dossier temporaire, association `.qsp`, lancement avec un `.qsp` en argument (la fenêtre porte son nom), désinstallation : tout passe |
+
+## Décisions prises pendant M9
+
+- **Photo = tuile « tissu »** : l'impression et l'aperçu réutilisent le chemin des tissus (`photo:<id>`), donc la même échelle réelle (pixels ÷ ppp).
+- **Les bibliothèques des broderies, des dispositions et des quilts rapides** sont des grilles simples (une boîte chacune), pas l'arbre à cinq sections des blocs, tissus et fils ; pas de « Mes favoris » pour elles.
+- **Accueil** : désactivé au démarrage par défaut (case dans Préférences › Affichage), pour ne pas gêner l'ouverture directe d'un projet ; il s'ouvre par le bouton *Accueil* ou le menu Aide.
+- **Fil d'une broderie** : le « pinceau fil » prend le fil choisi dans la palette des fils ; sans lui, le fil enregistré dans la broderie. Pas de couleur par tracé.
+- **Gamme de couleurs** : chaque pixel prend le décalage de sa couleur dominante la plus proche (OKLab), ce qui garde les ombres et les lumières.
+- **Photo Patchwork** : un pixel complètement transparent ne compte pas ; une pièce plus petite qu'un pixel prend le pixel sous son centre ; l'« Auto Mask » est le rectangle du centre.
+- **Associations de fichiers** : le chemin passé au lancement est autorisé comme « choisi par l'utilisateur » (le processus principal n'ouvre autrement que le dossier des projets, les récents et les fichiers choisis dans une boîte).
+
+## Reporté / limites connues (M9)
+
+- Pas de poignées à l'œil pour redimensionner la photo du Photo Patchwork, ni pour recadrer : saisie de nombres.
+- Photo posée dans l'emplacement d'une disposition Horizontal : non faite (calque 2, ou calque 1 en Custom Set).
+- Rendu « 3D » d'une broderie : un fil épais avec ombre et reflet, sans éclairage réel. Pas d'import de fichiers de broderie `.EXP`.
+- Pas de bibliothèque liée à un dossier externe, pas d'import d'images multiples dans Photos depuis la bibliothèque (le plan Image importe une image à la fois ; la bibliothèque des tissus en importe plusieurs).
+- La mise en page de photos n'est pas enregistrée dans le projet ; fermer la fenêtre l'efface.
+- Les captures de l'accueil, de l'aide et des boîtes de couleur n'ont pas de référence : ces écrans sont vérifiés par leurs éléments, pas par image.
 
 ## Notes pratiques
 

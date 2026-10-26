@@ -29,8 +29,12 @@ export interface ProjectIpcDeps {
 
 const norm = (p: string) => path.resolve(p).toLowerCase();
 
+/** Fichiers que l'utilisateur a désignés hors de l'interface (double-clic dans l'Explorateur) : ils s'ouvrent. */
+const opened = new Set<string>();
+export const allowProjectFile = (file: string): void => void opened.add(norm(file));
+
 export function registerProjectIpc(deps: ProjectIpcDeps): void {
-  const chosen = new Set<string>();
+  const chosen = opened;
 
   const isProjectFile = (p: unknown): p is string => typeof p === "string" && p.toLowerCase().endsWith(PROJECT_EXTENSION);
 

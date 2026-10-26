@@ -60,6 +60,14 @@
         "portable"
       ]
     },
+    "fileAssociations": [
+      {
+        "ext": "qsp",
+        "name": "Projet Quilt Studio",
+        "description": "Projet Quilt Studio",
+        "role": "Editor"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
