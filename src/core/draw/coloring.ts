@@ -95,7 +95,9 @@ export function fussyCut(fills: Fills, key: string, dx: number, dy: number): Fil
   if (!paint || paint.kind !== "fabric" || (dx === 0 && dy === 0)) return fills;
   const x = roundOffset((paint.offset?.x ?? 0) + dx);
   const y = roundOffset((paint.offset?.y ?? 0) + dy);
-  const next: Paint = x === 0 && y === 0 ? { kind: "fabric", fabricId: paint.fabricId } : { kind: "fabric", fabricId: paint.fabricId, offset: { x, y } };
+  const next: Paint = { kind: "fabric", fabricId: paint.fabricId };
+  if (x !== 0 || y !== 0) next.offset = { x, y };
+  if (paint.rotation) next.rotation = paint.rotation;
   return { ...fills, [key]: next };
 }
 

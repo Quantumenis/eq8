@@ -28,9 +28,10 @@ export interface FabricOffset {
 
 /**
  * Ce qu'on applique sur une pièce : un tissu du carnet ou une couleur unie (recopiée, sans lien avec la palette).
- * Le tissu se pose à l'échelle réelle, calé sur le coin du bloc, décalé de `offset` s'il a été « coupé » à la main.
+ * Le tissu se pose à l'échelle réelle, calé sur le coin du bloc, décalé de `offset` s'il a été « coupé » à la main,
+ * et tourné de `rotation` degrés (plan Quilt, SPEC §5.6).
  */
-export type Paint = { kind: "fabric"; fabricId: Id; offset?: FabricOffset } | { kind: "solid"; rgb: string };
+export type Paint = { kind: "fabric"; fabricId: Id; offset?: FabricOffset; rotation?: number } | { kind: "solid"; rgb: string };
 
 /** Styles de fil (Q-5.2) : continu, tirets, pointillés, point-tiret. */
 export const THREAD_STYLES = ["solid", "dash", "dot", "dashdot"] as const;

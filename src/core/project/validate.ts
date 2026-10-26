@@ -122,9 +122,13 @@ function paint(value: unknown, path: string): Paint {
   const r = record(value, path);
   if (r.kind === "fabric") {
     const fabricId = text(r.fabricId, `${path}.fabricId`);
-    if (r.offset === undefined) return { kind: "fabric", fabricId };
-    const o = record(r.offset, `${path}.offset`);
-    return { kind: "fabric", fabricId, offset: { x: finite(o.x, `${path}.offset.x`), y: finite(o.y, `${path}.offset.y`) } };
+    const out: Extract<Paint, { kind: "fabric" }> = { kind: "fabric", fabricId };
+    if (r.offset !== undefined) {
+      const o = record(r.offset, `${path}.offset`);
+      out.offset = { x: finite(o.x, `${path}.offset.x`), y: finite(o.y, `${path}.offset.y`) };
+    }
+    if (r.rotation !== undefined) out.rotation = finite(r.rotation, `${path}.rotation`);
+    return out;
   }
   if (r.kind === "solid") return { kind: "solid", rgb: rgb(r.rgb, `${path}.rgb`) };
   return fail(path, "type d'habillage inconnu");
