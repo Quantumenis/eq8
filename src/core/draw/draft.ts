@@ -1,7 +1,7 @@
 // Le brouillon d'un bloc EasyDraw : sa taille, son accrochage, ses segments et ses repères.
 // Toutes les opérations sont pures (brouillon → brouillon) ; une opération sans effet renvoie le brouillon reçu.
 
-import { createId, type Id, type JsonValue } from "../project/model";
+import { createId, type Id, type JsonValue, type Paint } from "../project/model";
 import {
   EPS,
   boundsOf,
@@ -14,6 +14,7 @@ import {
   type Pt,
   type Segment,
 } from "./geometry";
+import { analyzeBlock, type PieceAnalysis } from "./pieces";
 import type { SnapSettings } from "./snap";
 
 export interface BlockDraft {
@@ -27,6 +28,8 @@ export interface BlockDraft {
   segments: Segment[];
   /** Repères : ne s'impriment pas et survivent à un nouveau bloc. */
   guides: Segment[];
+  /** Coloration en cours (onglet COLORATION), par clé de pièce. */
+  fills: Record<string, Paint>;
 }
 
 export const DEFAULT_BLOCK_SIZE = 6;
@@ -43,6 +46,7 @@ export function newDraft(guides: Segment[] = []): BlockDraft {
     snap: { grid: true, nodes: true, lines: false },
     segments: [],
     guides,
+    fills: {},
   };
 }
 
@@ -68,8 +72,20 @@ export function toDrawing(d: BlockDraft): JsonValue {
   return { kind: "easydraw", segments: d.segments.map(cleanSegment) } as unknown as JsonValue;
 }
 
-export function fromDrawing(drawing: JsonValue, width: number, height: number, guides: Segment[]): BlockDraft {
-  const base = { ...newDraft(guides), width, height, graph: { show: true, divX: Math.max(1, Math.round(width)), divY: Math.max(1, Math.round(height)) } };
+export function fromDrawing(
+  drawing: JsonValue,
+  width: number,
+  height: number,
+  guides: Segment[],
+  fills: Record<string, Paint> = {},
+): BlockDraft {
+  const base = {
+    ...newDraft(guides),
+    width,
+    height,
+    graph: { show: true, divX: Math.max(1, Math.round(width)), divY: Math.max(1, Math.round(height)) },
+    fills: { ...fills },
+  };
   const d = drawing as { kind?: string; segments?: Segment[] } | null;
   if (d && d.kind === "easydraw" && Array.isArray(d.segments)) {
     return { ...base, snapX: suggestSnap(width), snapY: suggestSnap(height), segments: d.segments.map((s) => ({ ...s, id: createId() })) };
@@ -295,4 +311,21 @@ export function isEmpty(draft: BlockDraft): boolean {
 export function easyDrawSegments(drawing: JsonValue): Segment[] | null {
   const d = drawing as { kind?: string; segments?: Segment[] } | null;
   return d && d.kind === "easydraw" && Array.isArray(d.segments) ? d.segments : null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Pièces et coloration
+
+/**
+ * Nettoyage du passage à COLORATION et de l'ajout au carnet (SPEC §6.2, Q-6.1) : coupe aux intersections, retrait
+ * des segments pendants et des îlots. Le brouillon reçu est renvoyé tel quel s'il était déjà propre.
+ */
+export function cleanDrawing(draft: BlockDraft): { draft: BlockDraft; analysis: PieceAnalysis } {
+  const analysis = analyzeBlock(draft.width, draft.height, draft.segments);
+  if (!analysis.changed) return { draft, analysis };
+  return { draft: { ...draft, segments: analysis.segments.map(cleanSegment) }, analysis };
+}
+
+export function setFills(draft: BlockDraft, fills: Readonly<Record<string, Paint>>): BlockDraft {
+  return fills === draft.fills ? draft : { ...draft, fills: { ...fills } };
 }

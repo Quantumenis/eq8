@@ -116,7 +116,7 @@ export function addColoredBlock(project: Project, input: ColoredBlockInput): Col
     source !== undefined &&
     source.width === input.width &&
     source.height === input.height &&
-    jsonEqual(source.drawing, input.drawing);
+    sameContent(source.drawing, input.drawing); // les identifiants des segments changent à chaque « Modifier »
 
   if (source && sameDrawing) {
     if (input.coloring === null || source.colorings.some((c) => sameContent(c, input.coloring))) {
