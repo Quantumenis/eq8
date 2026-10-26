@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FUSSY_BIG_STEP, FUSSY_STEP, findPaletteEntry, fussyCut, paintPieces, paletteEntries, samePaint, similarPieces } from "../../core/draw/coloring";
 import {
   cleanDrawing,
+  contentOfDraft,
   clearGuides,
   convertToGuides,
+  isEmpty,
   toDrawing,
   isValidSnapCount,
   resizeBlock,
@@ -15,9 +17,15 @@ import {
   type BlockDraft,
 } from "../../core/draw/draft";
 import type { Pt } from "../../core/draw/geometry";
-import { DEFAULT_THREAD, applyThread, sectionAt, sectionsOf } from "../../core/draw/threads";
+import { DEFAULT_THREAD, applyThread, sectionAt, sectionsWithStrands } from "../../core/draw/threads";
+import { BLOCK_STYLES, styleHasApplique, styleHasPieced, styleIsEasy, styleIsPoly, type BlockStyle } from "../../core/draw/content";
+import type { NodeRef } from "../../core/draw/applique";
+import { DEFAULT_BRUSH, DEFAULT_ELLIPSE, DEFAULT_SWATH } from "../../core/draw/appliqueShapes";
+import { isShapeTool, type AppliqueTool, type PolyTool, type ShapeOptions, type ShapeTool } from "../shapeGestures";
+import { AppliquePanel, PolyPanel, initialMaker, makerShapes, type MakerState } from "./ShapePanels";
+import { TracePanel } from "./TracePanel";
 import { addNodesAt, addNodesAtIntersections, MAX_PARTS, partitionParams, staggerParams } from "../../core/draw/nodes";
-import { analyzeBlock, type Piece } from "../../core/draw/pieces";
+import type { Piece } from "../../core/draw/pieces";
 import { transformSelection, type MirrorAxis, type TransformSpec } from "../../core/draw/transform";
 import { emptyNotecard, type BlockItem, type Id, type Paint } from "../../core/project/model";
 import { blockPicture } from "../../core/print/kit";
@@ -58,6 +66,13 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   const draft = editor.draft;
   const project = current.project;
   const [tool, setTool] = useState<Tool>("line");
+  // PolyDraw et applique : outils, réglages, nœuds choisis, créateur en aperçu, calque actif des blocs à deux calques.
+  const [polyTool, setPolyTool] = useState<PolyTool>("polyline");
+  const [appTool, setAppTool] = useState<AppliqueTool>("dline");
+  const [layer, setLayer] = useState<"pieces" | "applique">("pieces");
+  const [shapeOptions, setShapeOptions] = useState<ShapeOptions>({ ellipse: DEFAULT_ELLIPSE, radius: 0, form: "heart", brush: DEFAULT_BRUSH, swath: DEFAULT_SWATH, looseness: 0.3 });
+  const [pickedNodes, setPickedNodes] = useState<readonly NodeRef[]>([]);
+  const [maker, setMaker] = useState<MakerState>(initialMaker);
   const [picked, setPicked] = useState<readonly Id[]>([]);
   const [lastAdded, setLastAdded] = useState<readonly Id[]>([]);
   const [grid, setGrid] = useState({ cols: 3, rows: 3 });
@@ -95,12 +110,10 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  const pieces = useMemo<readonly Piece[]>(
-    () => (tab === 2 || tab === 3 ? analyzeBlock(draft.width, draft.height, draft.segments).pieces : []),
-    [tab, draft.width, draft.height, draft.segments],
-  );
+  const content = useMemo(() => (tab === 2 || tab === 3 ? contentOfDraft(draft) : null), [tab, draft.style, draft.width, draft.height, draft.segments, draft.poly, draft.shapes]);
+  const pieces = useMemo<readonly Piece[]>(() => content?.pieces ?? [], [content]);
   const pieceKeys = useMemo(() => new Set(pieces.map((p) => p.key)), [pieces]);
-  const sections = useMemo(() => sectionsOf(pieces), [pieces]);
+  const sections = useMemo(() => sectionsWithStrands(pieces, content?.strands ?? []), [pieces, content]);
   const liveSpray = useMemo(() => sprayKeys.filter((k) => pieceKeys.has(k)), [sprayKeys, pieceKeys]);
 
   const setColorTool = (next: ColorTool) => {
@@ -323,11 +336,37 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
 
   // Les identifiants disparus (annulation, suppression) sortent de la sélection.
   const selection = useMemo(() => {
-    const alive = new Set(draft.segments.map((s) => s.id));
+    const alive = new Set([...draft.segments.map((s) => s.id), ...draft.shapes.map((s) => s.id), ...draft.poly.pieces.map((p) => p.id)]);
     return picked.filter((id) => alive.has(id));
-  }, [picked, draft.segments]);
+  }, [picked, draft.segments, draft.shapes, draft.poly.pieces]);
+
+  // Calque actif et outil du canvas : EasyDraw garde son propre jeu d'outils, PolyDraw et l'applique ont les leurs.
+  const hasPieced = styleHasPieced(draft.style);
+  const hasApplique = styleHasApplique(draft.style);
+  const activeLayer: "pieces" | "applique" = !hasApplique ? "pieces" : !hasPieced ? "applique" : layer;
+  const easyActive = activeLayer === "pieces" && styleIsEasy(draft.style);
+  const polyActive = activeLayer === "pieces" && styleIsPoly(draft.style);
+  const canvasShapeTool: ShapeTool | null = tab !== 1 || easyActive ? null : polyActive ? polyTool : appTool;
+  const nodeSelection = useMemo(() => pickedNodes.filter((n) => draft.shapes.some((s) => s.id === n.shape && n.node < s.nodes.length)), [pickedNodes, draft.shapes]);
+  const makerPreview = useMemo(() => (tab === 1 && activeLayer === "applique" ? makerShapes(maker, draft.width, draft.height) : []), [tab, activeLayer, maker, draft.width, draft.height]);
 
   const run = (label: string, change: (d: BlockDraft) => BlockDraft) => editor.execute(label, change);
+
+  const startNew = (style: BlockStyle) => {
+    editor.startNew(style);
+    setPicked([]);
+    setLastAdded([]);
+    setPickedNodes([]);
+    setMaker(initialMaker());
+    setLayer(style === "applique" || style === "motif" ? "applique" : "pieces");
+    onTab(1);
+  };
+
+  const switchLayer = (next: "pieces" | "applique") => {
+    setPicked([]);
+    setPickedNodes([]);
+    setLayer(next);
+  };
 
   const symmetry = (spec: TransformSpec) => {
     const result = transformSelection(editor.draft, selection, spec, clone);
@@ -366,31 +405,50 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
       <h2 className="palette-title">{fr.ribbon.block[tab]}</h2>
 
       {tab === 0 && (
-        <div className="palette-group">
+        <div className="palette-group" data-testid="style-picker">
           <p className="palette-text" data-testid="draw-style">
-            {fr.draw.style}
+            {fr.shape.new.styleLabel[draft.style]}
           </p>
-          <p className="palette-hint">{fr.draw.styleHelp}</p>
-          <button
-            type="button"
-            className="btn"
-            data-testid="new-easydraw"
-            title={fr.draw.newBlockTitle}
-            onClick={() => {
-              editor.startNew();
-              setPicked([]);
-              setLastAdded([]);
-              onTab(1);
-            }}
-          >
-            {fr.draw.newBlock}
+          <p className="palette-hint">{fr.shape.new.help[draft.style]}</p>
+          {(
+            [
+              [fr.shape.new.typePieced, [["easy", "new-easydraw", fr.shape.new.easy], ["poly", "new-polydraw", fr.shape.new.poly]]],
+              [fr.shape.new.typeApplique, [["applique", "new-applique", fr.shape.new.applique], ["motif", "new-motif", fr.shape.new.motif]]],
+              [fr.shape.new.typeBoth, [["easyApplique", "new-easy-applique", fr.shape.new.easyApplique], ["polyApplique", "new-poly-applique", fr.shape.new.polyApplique]]],
+            ] as [string, [BlockStyle, string, string][]][]
+          ).map(([title, styles]) => (
+            <div key={title}>
+              <h3>{title}</h3>
+              <div className="tool-grid">
+                {styles.map(([style, testId, label]) => (
+                  <button key={style} type="button" className="btn" data-testid={testId} aria-pressed={draft.style === style} title={fr.shape.new.startNew} onClick={() => startNew(style)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <h3>{fr.shape.new.typeSerendipity}</h3>
+          <button type="button" className="btn" data-testid="new-serendipity" disabled title={fr.shape.new.serendipityLater}>
+            {fr.shape.new.serendipity}
           </button>
-          <p className="palette-hint">{fr.draw.otherStyles}</p>
+          <p className="palette-hint">{fr.shape.new.serendipityLater}</p>
         </div>
       )}
 
       {tab === 1 && (
         <>
+          {hasPieced && hasApplique && (
+            <div className="palette-group" role="tablist" aria-label={fr.shape.layers.title} data-testid="layer-tabs">
+              {(["pieces", "applique"] as const).map((l) => (
+                <button key={l} type="button" role="tab" className="tool-button" aria-selected={activeLayer === l} aria-pressed={activeLayer === l} data-testid={`layer-${l}`} onClick={() => switchLayer(l)}>
+                  {fr.shape.layers[l]}
+                </button>
+              ))}
+            </div>
+          )}
+          {easyActive && (
+            <>
           <div className="palette-group" role="group" aria-label={fr.draw.tools.title}>
             <div className="tool-grid">
               {TOOLS.map((id) => (
@@ -524,6 +582,40 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
               </div>
             </div>
           )}
+            </>
+          )}
+          {polyActive && (
+            <PolyPanel draft={draft} run={run} selection={selection} setPicked={setPicked} unit={unit} notify={notify} tool={polyTool} onTool={(t) => { setPolyTool(t); setPicked([]); }} />
+          )}
+          {activeLayer === "applique" && (
+            <AppliquePanel
+              draft={draft}
+              run={run}
+              selection={selection}
+              setPicked={setPicked}
+              unit={unit}
+              notify={notify}
+              tool={appTool}
+              onTool={(t) => {
+                setAppTool(t);
+                setPicked([]);
+              }}
+              options={shapeOptions}
+              onOptions={setShapeOptions}
+              pickedNodes={nodeSelection}
+              onPickNodes={setPickedNodes}
+              maker={maker}
+              onMaker={setMaker}
+              isMotif={draft.style === "motif"}
+            />
+          )}
+          {draft.style === "motif" && (
+            <div className="palette-group">
+              <h3>{fr.shape.list.title}</h3>
+              <Check label={fr.shape.list.asStencil} checked={draft.list === "stencils"} testId="motif-as-stencil" onChange={(on) => run(fr.shape.history.list, (d) => ({ ...d, list: on ? "stencils" : "motifs" }))} />
+            </div>
+          )}
+          <TracePanel draft={draft} run={run} notify={notify} />
         </>
       )}
 
@@ -564,6 +656,11 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
             <span className="precision-title" data-testid="piece-count">
               {fr.coloring.pieces(pieces.length)}
             </span>
+            {content && content.issues.length > 0 && (
+              <span className="precision-title precision-title--warn" data-testid="issue-count" role="status">
+                {fr.shape.issues.selfIntersect(content.issues.length)}
+              </span>
+            )}
             {colorTool === "fussy" && fussyKey && (
               <span
                 className="precision-title"
@@ -600,6 +697,7 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
               }}
             />
           </div>
+          {!polyActive && (
           <div className="precision-group">
             <span className="precision-title">{fr.draw.precision.snaps}</span>
             <NumberField
@@ -621,6 +719,7 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
               onCommit={(n) => setSnap("y", n)}
             />
           </div>
+          )}
           <div className="precision-group">
             <Check label={fr.draw.precision.graph} checked={draft.graph.show} testId="graph-show" onChange={(show) => run(fr.draw.history.precision, (d) => setGraphPaper(d, { show }))} />
             <NumberField
@@ -638,19 +737,36 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
               onCommit={(n) => run(fr.draw.history.precision, (d) => setGraphPaper(d, { divY: n })) || n === draft.graph.divY}
             />
           </div>
+          {easyActive && (
           <div className="precision-group">
             <span className="precision-title">{fr.draw.precision.snapTo}</span>
             <Check label={fr.draw.precision.toGrid} checked={draft.snap.grid} testId="snap-grid" onChange={(v) => run(fr.draw.history.precision, (d) => setSnapOption(d, "grid", v))} />
             <Check label={fr.draw.precision.toNodes} checked={draft.snap.nodes} testId="snap-nodes" onChange={(v) => run(fr.draw.history.precision, (d) => setSnapOption(d, "nodes", v))} />
             <Check label={fr.draw.precision.toLines} checked={draft.snap.lines} testId="snap-lines" onChange={(v) => run(fr.draw.history.precision, (d) => setSnapOption(d, "lines", v))} />
           </div>
+          )}
+          {activeLayer === "applique" && (
+          <div className="precision-group" data-testid="applique-snap">
+            <span className="precision-title">{fr.shape.snap.title}</span>
+            <Check label={fr.shape.snap.toGrid} checked={draft.snap.grid} testId="snap-grid" onChange={(v) => run(fr.shape.history.snap, (d) => setSnapOption(d, "grid", v))} />
+            <Check label={fr.shape.snap.toNodes} checked={draft.snap.nodes} testId="snap-nodes" onChange={(v) => run(fr.shape.history.snap, (d) => setSnapOption(d, "nodes", v))} />
+            <Check label={fr.shape.snap.wholePiece} checked={draft.appSnap.wholePiece} testId="snap-whole" onChange={(v) => run(fr.shape.history.snap, (d) => ({ ...d, appSnap: { ...d.appSnap, wholePiece: v } }))} />
+            <Check label={fr.shape.snap.align} checked={draft.appSnap.align} testId="snap-align" onChange={(v) => run(fr.shape.history.snap, (d) => ({ ...d, appSnap: { ...d.appSnap, align: v } }))} />
+            <Check label={fr.shape.snap.autoJoin} checked={draft.appSnap.autoJoin} testId="snap-autojoin" onChange={(v) => run(fr.shape.history.snap, (d) => ({ ...d, appSnap: { ...d.appSnap, autoJoin: v } }))} />
+          </div>
+          )}
+          {(polyActive || hasApplique) && (
+          <div className="precision-group">
+            <Check label={fr.shape.snap.autoFill} checked={draft.autoFill} testId="auto-fill" onChange={(v) => run(fr.shape.history.fill, (d) => ({ ...d, autoFill: v }))} />
+          </div>
+          )}
           <div className="precision-group">
             <span className="precision-title">{fr.draw.precision.guides}</span>
             <button
               type="button"
               className="btn btn--small"
               data-testid="guides-convert"
-              disabled={draft.segments.length === 0}
+              disabled={isEmpty(draft)}
               onClick={() => {
                 const ids = selection.length > 0 ? selection : null;
                 run(fr.draw.history.guides, (d) => convertToGuides(d, ids));
@@ -676,6 +792,13 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
           lastAdded={lastAdded}
           onAdded={setLastAdded}
           coloring={tab === 3 ? printLayer : coloringLayer}
+          shapeTool={canvasShapeTool}
+          shapeOptions={shapeOptions}
+          pickedNodes={nodeSelection}
+          onPickNodes={setPickedNodes}
+          preview={makerPreview}
+          activeLayer={hasPieced && hasApplique && tab === 1 ? activeLayer : undefined}
+          onNotify={notify}
         />
       </main>
       {printing && printSubject && <PrintDialog kind={printing} subject={printSubject} unit={unit} notify={notify} onClose={() => setPrinting(null)} />}

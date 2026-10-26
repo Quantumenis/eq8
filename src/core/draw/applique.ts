@@ -5,7 +5,7 @@
 import { sha256Hex } from "../hash";
 import { createId, type Id } from "../project/model";
 import { applyMat, type Mat } from "../quilt/geom";
-import { cubicBounds, cubicIsLine, cubicToSegments, splitCubic, type Cubic } from "./bezier";
+import { cubicAt, cubicBounds, cubicIsLine, cubicToSegments, splitCubic, type Cubic } from "./bezier";
 import { clean, dist, samePoint, unionBounds, type Pt, type Rect, type Segment } from "./geometry";
 import { flatten, pieceFromBoundary, segmentText, type Piece } from "./pieces";
 
@@ -192,7 +192,7 @@ export function backgroundPiece(width: number, height: number): Piece {
     { id: "bg4", kind: "line", a: d, b: a },
   ];
   const piece = pieceFromBoundary(boundary, "b") as Piece;
-  return { ...piece, key: BACKGROUND_KEY };
+  return { ...piece, key: BACKGROUND_KEY, stack: 0 };
 }
 
 function strandKey(segments: readonly Segment[]): string {
@@ -228,6 +228,7 @@ export function appliqueContent(shapes: readonly AppShape[], opts: { background?
     const n = seen.get(piece.key) ?? 0;
     seen.set(piece.key, n + 1);
     if (n > 0) piece.key = `${piece.key}-${n + 1}`;
+    piece.stack = pieces.length + 1;
     if (selfIntersects(boundary)) issues.push({ kind: "selfIntersect", shape: shape.id, key: piece.key });
     pieces.push(piece);
   }
@@ -332,6 +333,34 @@ export function centerInBlock(shapes: readonly AppShape[], ids: ReadonlySet<Id>,
   const dy = height / 2 - (box.y0 + box.y1) / 2;
   if (Math.abs(dx) < 1e-12 && Math.abs(dy) < 1e-12) return shapes as AppShape[];
   return translateShapes(shapes, ids, dx, dy);
+}
+
+/** Le point d'une forme le plus proche de p : le segment (nœud de départ), le paramètre t et la distance. */
+export function nearestOnShape(shape: AppShape, p: Pt): { seg: number; t: number; distance: number; point: Pt } | null {
+  let best: { seg: number; t: number; distance: number; point: Pt } | null = null;
+  shapeCubics(shape).forEach((c, seg) => {
+    const probe = (t: number) => {
+      const q = cubicAt(c, t);
+      return { t, q, d: dist(p, q) };
+    };
+    let lo = probe(0);
+    for (let i = 1; i <= 48; i++) {
+      const cur = probe(i / 48);
+      if (cur.d < lo.d) lo = cur;
+    }
+    // Affinage autour du meilleur échantillon.
+    let a = Math.max(0, lo.t - 1 / 48);
+    let b = Math.min(1, lo.t + 1 / 48);
+    for (let k = 0; k < 24; k++) {
+      const m1 = a + (b - a) / 3;
+      const m2 = b - (b - a) / 3;
+      if (probe(m1).d < probe(m2).d) b = m2;
+      else a = m1;
+    }
+    const fin = probe((a + b) / 2);
+    if (!best || fin.d < best.distance) best = { seg, t: fin.t, distance: fin.d, point: fin.q };
+  });
+  return best;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

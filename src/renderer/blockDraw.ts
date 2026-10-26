@@ -7,6 +7,8 @@ import type { SnapResult } from "../core/draw/snap";
 import { threadDash, threadWidth, type Section } from "../core/draw/threads";
 import { toScreen, toWorld, type View } from "../core/draw/view";
 import type { ThreadStroke } from "../core/project/model";
+import { styleIsPoly } from "../core/draw/content";
+import { paintPolyGrid, paintShapesOver, paintShapesUnder, type ShapeScene } from "./shapeDraw";
 import type { Tile } from "./fabricTiles";
 
 export interface Palette {
@@ -46,6 +48,8 @@ export interface Scene {
   palette: Palette;
   /** Onglet COLORATION : pièces remplies, sans grille ni papier millimétré. */
   coloring: ColoringScene | null;
+  /** PolyDraw et applique : décalque, remplissages crème, nœuds, tracés en cours (hors COLORATION). */
+  shape?: ShapeScene | undefined;
 }
 
 /** Ce qui remplit une pièce : une couleur, ou un tissu (sa tuile, son décalage, et sa couleur moyenne en attendant l'image). */
@@ -111,6 +115,9 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   ctx.fillStyle = palette.sheet;
   ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
 
+  // Décalque et pièces PolyDraw / applique remplies en crème.
+  if (!s.coloring && s.shape) paintShapesUnder(ctx, view, s.dpr, draft, s.shape);
+
   // Pièces colorées (dans le repère du bloc, pour garder les arcs exacts).
   if (s.coloring) {
     ctx.save();
@@ -169,7 +176,8 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   // Points d'accrochage, seulement ceux qui sont visibles et assez espacés.
   const gridX = draft.width / draft.snapX;
   const gridY = draft.height / draft.snapY;
-  if (!s.coloring && draft.snap.grid && gridX * view.scale >= 7 && gridY * view.scale >= 7) {
+  if (!s.coloring && s.shape?.showPolyGrid) paintPolyGrid(ctx, view, draft, palette);
+  else if (!s.coloring && !styleIsPoly(draft.style) && draft.snap.grid && gridX * view.scale >= 7 && gridY * view.scale >= 7) {
     const w0 = toWorld(view, 0, 0);
     const w1 = toWorld(view, s.width, s.height);
     const i0 = Math.max(0, Math.floor(w0.x / gridX));
@@ -237,6 +245,9 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
       ctx.stroke();
     }
   }
+
+  // PolyDraw et applique : contours, sélection, nœuds, tracés en cours.
+  if (!s.coloring && s.shape) paintShapesOver(ctx, view, s.dpr, draft, s.shape, palette);
 
   // Coupe ciblée : la pièce dont on déplace le tissu.
   if (s.coloring?.focus) {

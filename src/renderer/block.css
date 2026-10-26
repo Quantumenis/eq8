@@ -427,3 +427,40 @@
 .coloring-strip-item[aria-checked="true"] {
   border-color: var(--accent);
 }
+
+/* Applique, PolyDraw et décalque (M8). */
+
+.tool-grid--sub {
+  margin-top: 4px;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.tool-grid--forms {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.tool-button--small {
+  padding: 4px 4px;
+  font-size: 11px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.palette--block select {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--sheet);
+  color: var(--text);
+  font: inherit;
+}
+
+.precision-title--warn {
+  color: #b3541e;
+  font-weight: 600;
+}
+
+.palette--block input[type="range"] {
+  width: 100%;
+}

@@ -11,6 +11,12 @@ import { ACTUAL_SIZE, ZOOM_STEP, fitView, pan, stepZoom, toWorld, zoomAt, zoomPe
 import { formatLength, type DisplayUnit } from "../../core/units";
 import type { Id } from "../../core/project/model";
 import { paint, readPalette, type ColoringScene, type Palette } from "../blockDraw";
+import { selectionBox, deleteShapes, translateShapes, type AppShape, type NodeRef } from "../../core/draw/applique";
+import { tracePlacement, traceOpacity, type TraceImage } from "../../core/draw/trace";
+import { deletePolyPieces, polyNodes } from "../../core/draw/polydraw";
+import { emptyShapeScene, type ShapeScene } from "../shapeDraw";
+import { ShapeController, isPolyTool, type ShapeOptions, type ShapeTool } from "../shapeGestures";
+import { styleHasApplique, styleIsPoly } from "../../core/draw/content";
 import { fr } from "../i18n/fr";
 
 export type Tool = "pick" | "edit" | "line" | "arc" | "grid";
@@ -41,6 +47,17 @@ interface Props {
   onAdded: (ids: readonly Id[]) => void;
   lastAdded: readonly Id[];
   coloring?: ColoringLayer | undefined;
+  /** Outil de PolyDraw ou d'applique actif (remplace `tool`). */
+  shapeTool?: ShapeTool | null | undefined;
+  shapeOptions?: ShapeOptions | undefined;
+  /** Nœuds choisis (outil Édition de l'applique). */
+  pickedNodes?: readonly NodeRef[] | undefined;
+  onPickNodes?: ((nodes: readonly NodeRef[]) => void) | undefined;
+  /** Formes d'un créateur de pièces, en aperçu (pointillés). */
+  preview?: readonly AppShape[] | undefined;
+  /** Le calque Applique est actif dans un bloc à deux calques (l'autre est estompé). */
+  activeLayer?: "pieces" | "applique" | undefined;
+  onNotify?: ((message: string) => void) | undefined;
 }
 
 type Drag =
@@ -59,7 +76,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
 }
 
-export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode, unit, onAdded, lastAdded, coloring }: Props) {
+export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode, unit, onAdded, lastAdded, coloring, shapeTool = null, shapeOptions, pickedNodes = [], onPickNodes, preview = [], activeLayer, onNotify }: Props) {
   const draft = editor.draft;
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,10 +92,49 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
   const paletteRef = useRef<Palette | null>(null);
 
   const selected = useMemo(() => new Set(selection), [selection]);
-  const live = useRef({ draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded, coloring });
-  live.current = { draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded, coloring };
+  const live = useRef({ draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded, coloring, shapeTool, shapeOptions, pickedNodes, onPickNodes, onNotify });
+  live.current = { draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded, coloring, shapeTool, shapeOptions, pickedNodes, onPickNodes, onNotify };
 
   const refresh = useCallback(() => setDragTick((n) => n + 1), []);
+
+  // PolyDraw et applique : le contrôleur des gestes, qui lit l'état courant à travers `live`.
+  const controller = useMemo(
+    () =>
+      new ShapeController({
+        draft: () => live.current.draft,
+        view: () => live.current.view,
+        tol: (px) => toleranceInInches(px, live.current.view.scale),
+        execute: (label, change) => editor.execute(label, change),
+        selection: () => live.current.selected,
+        select: (ids) => live.current.onSelect(ids),
+        pickedNodes: () => live.current.pickedNodes,
+        pickNodes: (nodes) => live.current.onPickNodes?.(nodes),
+        options: () => live.current.shapeOptions as ShapeOptions,
+        notify: (m) => live.current.onNotify?.(m),
+        refresh: () => setDragTick((n) => n + 1),
+      }),
+    [editor],
+  );
+  const lastDown = useRef<{ t: number; x: number; y: number; n: number }>({ t: 0, x: 0, y: 0, n: 0 });
+
+  // Le changement d'outil abandonne le tracé en cours.
+  useEffect(() => {
+    controller.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapeTool, controller]);
+
+  // Image de décalque : l'élément image est recréé quand l'image change.
+  const [traceImage, setTraceImage] = useState<HTMLImageElement | null>(null);
+  const traceSrc = draft.trace?.src ?? null;
+  useEffect(() => {
+    if (!traceSrc) {
+      setTraceImage(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => setTraceImage(img);
+    img.src = traceSrc;
+  }, [traceSrc]);
 
   // Taille de la zone de dessin.
   useLayoutEffect(() => {
@@ -112,7 +168,7 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
   // Ce qui s'affiche pendant un geste (sans toucher à l'historique).
   const gesture = (() => {
     const d = drag.current;
-    let shown: BlockDraft = draft;
+    let shown: BlockDraft = controller.shown(draft);
     let preview: Segment[] = [];
     if (!d) return { shown, preview };
     if (d.kind === "draw") {
@@ -157,15 +213,36 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     paletteRef.current = readPalette();
+    const shown = gesture.shown;
+    const shapeScene: ShapeScene | undefined = coloring
+      ? undefined
+      : {
+          ...emptyShapeScene(),
+          trace: shown.trace?.visible && traceImage ? { image: traceImage, rect: tracePlacement(shown.trace, shown.width, shown.height), opacity: traceOpacity(shown.trace.clarity) } : null,
+          showPolyGrid: !!shapeTool && isPolyTool(shapeTool) && styleIsPoly(shown.style),
+          polySelection: selected,
+          shapeSelection: selected,
+          polyPending: controller.pendingPolyState(),
+          previewShapes: [...controller.previewShapes(), ...preview],
+          previewSegments: controller.previewSegments(),
+          editShape: shapeTool === "aedit" ? controller.editShape : null,
+          pickedNodes,
+          pending: controller.pendingPath,
+          marquee: controller.marquee,
+          selectionBox: shapeTool === "apick" && selected.size > 0 ? selectionBox(shown.shapes, selected) : null,
+          dimPieced: activeLayer === "applique",
+          dimApplique: activeLayer === "pieces",
+        };
     paint(ctx, {
+      shape: shapeScene,
       view,
       width: size.width,
       height: size.height,
       dpr,
-      draft: gesture.shown,
+      draft: shown,
       selection: selected,
       preview: gesture.preview,
-      hover: coloring ? null : hover,
+      hover: coloring ? null : shapeTool ? controller.hover : hover,
       showNodes: !coloring && tool === "edit",
       palette: paletteRef.current,
       coloring: coloring
@@ -266,6 +343,19 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       return;
     }
 
+    const st = live.current.shapeTool;
+    if (st && live.current.shapeOptions) {
+      const now = performance.now();
+      const ld = lastDown.current;
+      const near = Math.hypot(e.clientX - ld.x, e.clientY - ld.y) < 6 && now - ld.t < 400;
+      const n = near ? ld.n + 1 : 1;
+      lastDown.current = { t: now, x: e.clientX, y: e.clientY, n };
+      const follow = controller.down(st, raw, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, detail: n });
+      if (follow) canvas.setPointerCapture(e.pointerId);
+      refresh();
+      return;
+    }
+
     if (t === "line" || t === "arc" || t === "grid") {
       const start = snap(raw).point;
       drag.current = { kind: "draw", tool: t, start, current: start, flipped: false };
@@ -350,6 +440,13 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const raw = rawPoint(e);
     setPointer(raw);
+    const st = live.current.shapeTool;
+    if (st && !live.current.coloring && drag.current?.kind !== "pan") {
+      controller.move(st, raw, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+      setHover(controller.hover);
+      refresh();
+      return;
+    }
     const g = drag.current;
     const { draft: d, tool: t } = live.current;
     if (!g) {
@@ -409,6 +506,13 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       refresh();
       return;
     }
+    const st = live.current.shapeTool;
+    if (st && !live.current.coloring && g?.kind !== "pan") {
+      if (!cancelled) controller.up(st, rawPoint(e), { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+      else controller.cancel();
+      refresh();
+      return;
+    }
     if (!g || cancelled || g.kind === "pan") {
       refresh();
       return;
@@ -457,6 +561,31 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       } else if (live.current.coloring) {
         // Onglet COLORATION : seuls les raccourcis du zoom concernent la zone de dessin.
         return;
+      } else if (live.current.shapeTool) {
+        const st = live.current.shapeTool;
+        if (controller.key(st, e)) {
+          e.preventDefault();
+          refresh();
+        } else if (mod && e.key.toLowerCase() === "a") {
+          e.preventDefault();
+          live.current.onSelect(isPolyTool(st) ? d.poly.pieces.map((p) => p.id) : d.shapes.map((s) => s.id));
+        } else if ((e.key === "Delete" || e.key === "Backspace") && sel.size > 0) {
+          e.preventDefault();
+          editor.execute(fr.shape.history.remove, (d0) => ({ ...d0, shapes: deleteShapes(d0.shapes, sel), poly: deletePolyPieces(d0.poly, sel) }));
+          live.current.onSelect([]);
+          controller.editShape = null;
+        } else if (e.key.startsWith("Arrow") && sel.size > 0 && !isPolyTool(st)) {
+          e.preventDefault();
+          const step = Math.min(d.width / d.snapX, d.height / d.snapY);
+          const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+          const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+          const box = selectionBox(d.shapes, sel);
+          if (box && box.x0 + dx >= -1e-9 && box.y0 + dy >= -1e-9 && box.x1 + dx <= d.width + 1e-9 && box.y1 + dy <= d.height + 1e-9) {
+            editor.execute(fr.shape.history.move, (d0) => ({ ...d0, shapes: translateShapes(d0.shapes, sel, dx, dy) }), "nudge");
+          }
+        }
+        void polyNodes;
+        return;
       } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
         live.current.onSelect(d.segments.map((s) => s.id));
@@ -488,7 +617,15 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, fit, refresh, zoomStep]);
 
-  const cursor = coloring ? coloring.cursor : tool === "pick" ? "default" : tool === "edit" ? "cell" : "crosshair";
+  const cursor = coloring
+    ? coloring.cursor
+    : shapeTool
+      ? shapeTool === "apick" || shapeTool === "ppick" ? "default" : shapeTool === "aedit" || shapeTool === "pedit" ? "cell" : "crosshair"
+      : tool === "pick"
+        ? "default"
+        : tool === "edit"
+          ? "cell"
+          : "crosshair";
 
   return (
     <div
@@ -497,6 +634,10 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       data-testid="block-stage"
       data-segments={JSON.stringify(draft.segments)}
       data-guides={draft.guides.length}
+      data-style={draft.style}
+      data-shapes={draft.shapes.length}
+      data-poly={draft.poly.pieces.length}
+      data-shape-selected={selection.length}
       data-pieces={coloring?.pieces.length}
       data-filled={coloring?.pieces.filter((p) => coloring.fillOf(p.key) !== null).length}
     >

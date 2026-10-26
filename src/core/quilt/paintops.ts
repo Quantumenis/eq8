@@ -46,6 +46,8 @@ const parity = (p: ScenePiece): number => (p.row + p.col) % 2;
  * identiques, ou (Alt) dans un bloc identique sur deux.
  */
 export function brushTargets(scene: Scene, piece: ScenePiece, mode: ClickMode): ScenePiece[] {
+  // Texte en applique : un clic colore tout le texte de la boîte.
+  if (piece.text) return scene.pieces.filter((p) => p.owner === piece.owner);
   if (mode === "one" || !piece.ref || piece.pieceKey === "") return [piece];
   return scene.pieces.filter(
     (p) => p.layer === piece.layer && p.pieceKey === piece.pieceKey && sameRef(p.ref, piece.ref) && (mode === "all" || (p.role === piece.role && parity(p) === parity(piece))),

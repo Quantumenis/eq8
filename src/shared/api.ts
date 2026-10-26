@@ -69,6 +69,15 @@ export interface DocumentState {
 
 export type ExportKind = "pdf" | "png" | "jpg" | "svg";
 
+/** Variantes d'une police installée. */
+export type FontVariant = "regular" | "bold" | "italic" | "boldItalic";
+
+/** Une famille de polices installées sur le PC (texte en applique) et le fichier de chaque variante. */
+export interface InstalledFontInfo {
+  family: string;
+  files: Partial<Record<FontVariant, string>>;
+}
+
 /** Un travail d'impression : les pages en HTML (une page SVG par feuille), au format exact de la feuille (pouces). */
 export interface PrintJob {
   html: string;
@@ -149,6 +158,10 @@ export interface QuiltStudioApi {
 
   /** Octets d'une police système (liste fermée de familles), pour l'intégrer au PDF. */
   readSystemFont(family: string, bold: boolean): Promise<Uint8Array | null>;
+  /** Les polices TrueType installées sur le PC (texte en applique), triées par famille. */
+  listInstalledFonts(): Promise<InstalledFontInfo[]>;
+  /** Octets d'une variante d'une police installée (seules celles de la liste sont lisibles). */
+  readInstalledFont(family: string, variant: FontVariant): Promise<Uint8Array | null>;
   /** Boîte « Exporter » du système, puis écriture du fichier ; `null` si l'utilisateur annule. */
   exportFile(kind: ExportKind, suggestedName: string, bytes: Uint8Array): Promise<SaveResult | null>;
   /** Impression par le dialogue de Windows, en taille réelle. */
@@ -191,6 +204,8 @@ export const IPC = {
   getDefaultPalette: "palette:get",
   saveDefaultPalette: "palette:save",
   readSystemFont: "print:read-font",
+  listInstalledFonts: "print:list-fonts",
+  readInstalledFont: "print:read-installed-font",
   exportFile: "print:export-file",
   printDocument: "print:print",
   copyImage: "print:copy-image",

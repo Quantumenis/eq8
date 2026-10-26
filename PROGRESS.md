@@ -16,7 +16,7 @@
 | M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ✅ terminé | 2026-10-26 |
 | **M6 — Bordures** | ✅ terminé | 2026-10-26 |
 | **M7 — Impression et PDF à l'échelle, export, métrage** | ✅ terminé | 2026-10-26 |
-| **M8 — Applique, PolyDraw, blocs combinés, motifs, pochoirs et texte** | ⏭️ prochain | — |
+| **M8 — Applique, PolyDraw, blocs combinés, motifs, pochoirs et texte** | 🚧 en cours (cœur fait, interface à finir) | 2026-10-26 |
 | M9 | à faire | — |
 
 ## M1 — fait
@@ -336,6 +336,21 @@
 - Aperçu : pas de zoom par rectangle tracé (boutons et Ctrl+molette seulement). Bloc clé du tableau de découpe sans cercle autour des lettres.
 - L'impression réelle par le dialogue de Windows n'est pas testée automatiquement (le même chemin l'est, en PDF) : à essayer une fois sur l'imprimante, avec la page de test.
 - Les blocs déformés (pointe variable) ont leurs arcs aplatis (polylignes à 10⁻⁴ po).
+
+## M8 — état d'avancement (quota épuisé en cours de jalon)
+
+**Fait et testé (Vitest 398/398 au dernier passage complet, typecheck propre) — commit « M8 (étape 1) »**
+- Cœur : `core/draw/bezier.ts` (Béziers → arcs à 1e-4 po), `applique.ts` (formes à nœuds, pièces/fils, auto-intersection, édition des nœuds, couronne), `appliqueShapes.ts` (ellipse/pie/arc+sections, rectangles, 18 formes, StarMaker, PosieMaker, StencilMaker, pinceau, bande, main levée), `polydraw.ts` (6 grilles, PolyLigne/PolyArc, cloner-pivoter, édition), `content.ts` (dessins easydraw/polydraw/applique/combo), `trace.ts`, `core/text/*` (glyphes avec trous, polices, `sfnt`), `core/library/extra.ts` (46 éléments : blocs, motifs, pochoirs).
+- Quilt : texte (`FreeItem.text`, `addTextItem`, `setItemText`), fils des motifs/pochoirs (`scene.strands`), gabarits avec trous, gabarits refusés si auto-intersection.
+
+**Fait après le commit, NON commité/NON testé en e2e (typecheck propre)**
+- Interface : `shapeDraw.ts`, `shapeGestures.ts`, `ShapePanels.tsx`, `TracePanel.tsx`, `fonts.ts`, `i18n/shape.ts`, intégration dans `BlockCanvas`/`BlockWorkspace` (choix des 6 styles, calques Pièces/Applique, précision), IPC `listInstalledFonts`/`readInstalledFont`, `quiltDraw` (fils), `brushTargets` (texte entier).
+
+**Reste à faire**
+1. Lancer `npm run e2e` : corriger les régressions éventuelles du plan Bloc ; vérifier à l'œil les vignettes de la bibliothèque (formes : cœur, nuage, etc.).
+2. Quilt : outil « Poser le texte » (Maj+glisser) et palette TEXTE (`TextPanel` à écrire : textarea, police, taille, gras/italique/alignement ; appeler `installFontLookup()` et `ensureFont`, ajouter un `fontTick` aux dépendances de `buildScene`), groupe d'outils de texte au calque 2.
+3. Test Playwright de M8 (cœur avec Formes → coloration → motif calque 2 → gabarit PDF, capture), puis `npm run dist` / `e2e:dist`, puis mise à jour de ce fichier et commit « M8 : … ».
+4. Limites connues à noter : formes paramétriques converties en tracés dès la création ; recadrage du décalque numérique seulement ; Serendipity (M9+).
 
 ## Notes pratiques
 

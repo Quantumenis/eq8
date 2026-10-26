@@ -2,6 +2,7 @@
 
 import { History } from "../project/history";
 import type { Id } from "../project/model";
+import type { BlockStyle } from "./content";
 import { newDraft, type BlockDraft } from "./draft";
 
 export class BlockEditor {
@@ -66,9 +67,9 @@ export class BlockEditor {
     return did;
   }
 
-  /** Nouveau bloc vide : les repères sont conservés. */
-  startNew(): void {
-    this.history.reset(newDraft(this.draft.guides));
+  /** Nouveau bloc vide dans le style donné : les repères sont conservés. */
+  startNew(style: BlockStyle = "easy"): void {
+    this.history.reset(newDraft(this.draft.guides, style));
     this.sourceBlockId = null;
     this.sourceColoring = 0;
     this.changed();

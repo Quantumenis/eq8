@@ -2,8 +2,8 @@
 // Toutes les opérations sont pures (brouillon → brouillon) ; une opération sans effet renvoie le brouillon reçu.
 
 import { createId, type BlockListKey, type Id, type JsonValue, type Paint, type ThreadStroke } from "../project/model";
-import { scaleShapes, type AppShape } from "./applique";
-import { contentOfParts, drawingOfParts, partsOfDrawing, styleHasApplique, styleIsEasy, styleIsPoly, type BlockStyle, type DrawingParts } from "./content";
+import { scaleShapes, shapeSegments, type AppShape } from "./applique";
+import { contentOfParts, drawingOfParts, partsOfDrawing, styleHasApplique, styleIsEasy, styleIsPoly, type BlockStyle, type DrawingContent, type DrawingParts } from "./content";
 import { emptyPoly, scalePoly, type PolyState } from "./polydraw";
 import type { TraceImage } from "./trace";
 import {
@@ -80,6 +80,17 @@ export function newDraft(guides: Segment[] = [], style: BlockStyle = "easy"): Bl
 }
 
 export const partsOf = (d: BlockDraft): DrawingParts => ({ style: d.style, segments: d.segments, poly: d.poly, shapes: d.shapes });
+
+let lastContent: { style: BlockStyle; segments: unknown; poly: unknown; shapes: unknown; width: number; height: number; content: DrawingContent } | null = null;
+
+/** Les pièces, fils et contours du dessin en cours ; recalculé seulement quand le dessin ou la taille changent (pas la coloration). */
+export function contentOfDraft(d: BlockDraft): DrawingContent {
+  const m = lastContent;
+  if (m && m.style === d.style && m.segments === d.segments && m.poly === d.poly && m.shapes === d.shapes && m.width === d.width && m.height === d.height) return m.content;
+  const content = contentOfParts(partsOf(d), d.width, d.height);
+  lastContent = { style: d.style, segments: d.segments, poly: d.poly, shapes: d.shapes, width: d.width, height: d.height, content };
+  return content;
+}
 
 export function snapSettingsOf(d: BlockDraft): SnapSettings {
   return {
@@ -277,15 +288,21 @@ export function setSagitta(draft: BlockDraft, id: Id, sagitta: number): BlockDra
 // ---------------------------------------------------------------------------------------------------------------
 // Repères
 
-/** Convertit des segments (tout le dessin si `ids` est `null`) en repères. */
+/** Convertit des segments, des formes d'applique et des pièces PolyDraw (tout le dessin si `ids` est `null`) en repères. */
 export function convertToGuides(draft: BlockDraft, ids: readonly Id[] | null): BlockDraft {
-  const pick = ids === null ? new Set(draft.segments.map((s) => s.id)) : new Set(ids);
-  const moving = draft.segments.filter((s) => pick.has(s.id));
-  if (moving.length === 0) return draft;
+  const pick = ids === null ? null : new Set(ids);
+  const wanted = (id: Id) => pick === null || pick.has(id);
+  const moving = draft.segments.filter((s) => wanted(s.id));
+  const shapes = draft.shapes.filter((s) => wanted(s.id));
+  const pieces = draft.poly.pieces.filter((p) => wanted(p.id));
+  if (moving.length === 0 && shapes.length === 0 && pieces.length === 0) return draft;
+  const fresh = (s: Segment): Segment => ({ ...s, id: createId() });
   return {
     ...draft,
-    segments: draft.segments.filter((s) => !pick.has(s.id)),
-    guides: [...draft.guides, ...moving.map((s) => ({ ...s, id: createId() }))],
+    segments: draft.segments.filter((s) => !wanted(s.id)),
+    shapes: draft.shapes.filter((s) => !wanted(s.id)),
+    poly: pieces.length === 0 ? draft.poly : { ...draft.poly, pieces: draft.poly.pieces.filter((p) => !wanted(p.id)) },
+    guides: [...draft.guides, ...moving.map(fresh), ...shapes.flatMap((s) => shapeSegments(s).map(fresh)), ...pieces.flatMap((p) => p.edges.map(fresh))],
   };
 }
 

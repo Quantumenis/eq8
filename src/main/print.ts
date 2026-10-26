@@ -5,7 +5,8 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog } from "electron";
-import { IPC, type ExportKind, type PrintJob, type PrintOutcome, type SaveResult } from "../shared/api.js";
+import { groupFonts, readFontNames, type InstalledFont } from "../core/text/sfnt.js";
+import { IPC, type ExportKind, type FontVariant, type InstalledFontInfo, type PrintJob, type PrintOutcome, type SaveResult } from "../shared/api.js";
 import { handle } from "./ipc.js";
 import { writeFileAtomic } from "./store.js";
 
@@ -45,6 +46,48 @@ export function exportsDir(): string {
 function safeFileName(name: string, fallback: string): string {
   const cleaned = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
   return cleaned.replace(/[. ]+$/, "") || fallback;
+}
+
+/** Les polices installées (liste lue une fois : le dossier Fonts de Windows). */
+let installedFonts: Promise<InstalledFont[]> | null = null;
+const MAX_FONT_FILES = 3000;
+
+async function scanInstalledFonts(): Promise<InstalledFont[]> {
+  const dir = fontsDir();
+  let names: string[] = [];
+  try {
+    names = (await fs.readdir(dir)).filter((n) => /\.(ttf|otf)$/i.test(n)).slice(0, MAX_FONT_FILES);
+  } catch {
+    return [];
+  }
+  const found: { file: string; names: NonNullable<Awaited<ReturnType<typeof readFontNames>>> }[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = next++;
+      const file = names[i];
+      if (file === undefined) return;
+      let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
+      try {
+        handle = await fs.open(path.join(dir, file), "r");
+        const size = (await handle.stat()).size;
+        const open = handle;
+        const read = async (offset: number, length: number): Promise<Uint8Array> => {
+          const buf = Buffer.alloc(length);
+          const r = await open.read(buf, 0, length, offset);
+          return new Uint8Array(buf.buffer, buf.byteOffset, r.bytesRead);
+        };
+        const n = await readFontNames(read, size);
+        if (n) found.push({ file, names: n });
+      } catch {
+        // Police illisible : ignorée.
+      } finally {
+        await handle?.close().catch(() => undefined);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: 8 }, worker));
+  return groupFonts(found);
 }
 
 let printing = false;
@@ -104,6 +147,27 @@ export function registerPrintIpc(getWindow: () => BrowserWindow | null): void {
       const stat = await fs.stat(file);
       if (stat.size > MAX_FONT_BYTES) return null;
       return new Uint8Array(await fs.readFile(file));
+    } catch {
+      return null;
+    }
+  });
+
+  handle(IPC.listInstalledFonts, async (): Promise<InstalledFontInfo[]> => {
+    installedFonts ??= scanInstalledFonts();
+    return installedFonts;
+  });
+
+  handle(IPC.readInstalledFont, async (_event, family: unknown, variant: unknown): Promise<Uint8Array | null> => {
+    if (typeof family !== "string" || typeof variant !== "string") return null;
+    installedFonts ??= scanInstalledFonts();
+    const entry = (await installedFonts).find((f) => f.family === family);
+    const file = entry?.files[variant as FontVariant];
+    if (!file) return null;
+    try {
+      const full = path.join(fontsDir(), file);
+      const stat = await fs.stat(full);
+      if (stat.size > MAX_FONT_BYTES) return null;
+      return new Uint8Array(await fs.readFile(full));
     } catch {
       return null;
     }

@@ -43,6 +43,8 @@ export interface Piece {
   /** Trous (texte, applique) : contours fermés de sens inverse, et leur aplati. Absents pour une pièce sans trou. */
   holes?: Segment[][];
   holePolygons?: Pt[][];
+  /** Rang d'empilement (applique) : une pièce de rang supérieur recouvre les autres. Absent pour les pièces à plat. */
+  stack?: number;
 }
 
 export interface PieceAnalysis {
@@ -485,7 +487,10 @@ function insidePolygon(polygon: readonly Pt[], p: Pt): boolean {
   return inside;
 }
 
-/** La pièce sous le point p (la plus petite si plusieurs se recouvrent à cause de l'aplatissement), ou `null`. */
+/**
+ * La pièce sous le point p, ou `null`. Les pièces empilées (applique) : la plus haute. Sinon, la plus petite si
+ * plusieurs se recouvrent à cause de l'aplatissement.
+ */
 export function pieceAt(pieces: readonly Piece[], p: Pt): Piece | null {
   let best: Piece | null = null;
   for (const piece of pieces) {
@@ -493,7 +498,10 @@ export function pieceAt(pieces: readonly Piece[], p: Pt): Piece | null {
     if (p.x < b.x0 || p.x > b.x1 || p.y < b.y0 || p.y > b.y1) continue;
     if (!insidePolygon(piece.polygon, p)) continue;
     if (piece.holePolygons?.some((h) => insidePolygon(h, p))) continue;
-    if (!best || piece.area < best.area) best = piece;
+    if (!best) best = piece;
+    else if (piece.stack !== undefined || best.stack !== undefined) {
+      if ((piece.stack ?? -1) >= (best.stack ?? -1)) best = piece;
+    } else if (piece.area < best.area) best = piece;
   }
   return best;
 }

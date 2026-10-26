@@ -1,6 +1,6 @@
 import { pruneFills } from "../core/draw/coloring";
-import { cleanDrawing, fromDrawing, isEmpty, setFills, setThreads, toDrawing } from "../core/draw/draft";
-import { pruneThreads, sectionsOf } from "../core/draw/threads";
+import { cleanDrawing, contentOfDraft, fromDrawing, isEmpty, setFills, setThreads, toDrawing } from "../core/draw/draft";
+import { pruneThreads, sectionsWithStrands } from "../core/draw/threads";
 import type { Segment } from "../core/draw/geometry";
 import type { PieceAnalysis } from "../core/draw/pieces";
 import { addColoredBlock } from "../core/project/commands";
@@ -48,17 +48,19 @@ export function addCurrentBlock(): AddBlockResult {
   const draft = blockEditor.draft;
   if (isEmpty(draft)) return { outcome: "empty", cleanup };
   const fills = pruneFills(draft.fills, analysis.pieces);
-  const threads = pruneThreads(draft.threads, sectionsOf(analysis.pieces));
+  const content = contentOfDraft(draft);
+  const threads = pruneThreads(draft.threads, sectionsWithStrands(analysis.pieces, content.strands));
   const hasThreads = Object.keys(threads).length > 0;
   const coloring: Coloring | null = Object.keys(fills).length > 0 || hasThreads ? { id: createId(), fills, ...(hasThreads ? { threads } : {}) } : null;
-  const count = session.project.sketchbook.blocks.length;
+  const list = draft.list;
+  const count = session.project.sketchbook[list].length;
   let result: AddBlockResult = { outcome: "duplicate", cleanup };
   let blockId: Id | null = null;
   session.execute(fr.draw.addToSketchbookLabel, (project) => {
     const r = addColoredBlock(project, {
-      list: "blocks",
+      list,
       sourceBlockId: blockEditor.sourceBlockId ?? undefined,
-      card: emptyNotecard(`${fr.draw.blockName} ${count + 1}`),
+      card: emptyNotecard(`${list === "motifs" ? fr.shape.names.motifs : list === "stencils" ? fr.shape.names.stencils : fr.draw.blockName} ${count + 1}`),
       width: draft.width,
       height: draft.height,
       drawing: toDrawing(draft),
@@ -83,7 +85,7 @@ export function editBlockFromSketchbook(id: Id, coloringIndex?: number): boolean
   const index = coloringIndex ?? (found.block.colorings.length > 0 ? 1 : 0);
   const coloring = index > 0 ? found.block.colorings[index - 1] : undefined;
   const fills = coloring?.fills;
-  const draft = fromDrawing(found.block.drawing, found.block.width, found.block.height, blockEditor.draft.guides, fills, coloring?.threads);
+  const draft = { ...fromDrawing(found.block.drawing, found.block.width, found.block.height, blockEditor.draft.guides, fills, coloring?.threads), list: found.list };
   blockEditor.load(draft, id, fills ? index : 0);
   return true;
 }

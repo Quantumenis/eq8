@@ -5,6 +5,7 @@ import type { BorderStyle } from "../../core/quilt/borders";
 import type { AutoCategory } from "../../core/quilt/borderpresets";
 import type { ProjectNameProblem } from "../../core/project/names";
 import type { FileError } from "../../shared/api";
+import { shape, textTool } from "./shape";
 
 const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
 
@@ -1175,4 +1176,6 @@ export const fr = {
       empty: "Sélection vide.",
     },
   },
+  shape,
+  textTool,
 } as const;

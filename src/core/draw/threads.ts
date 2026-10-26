@@ -4,6 +4,7 @@
 import { sha256Hex } from "../hash";
 import type { ThreadStroke } from "../project/model";
 import { clean, project, type Pt, type Segment } from "./geometry";
+import type { Strand } from "./applique";
 import { segmentText, type Piece } from "./pieces";
 
 export interface Section {
@@ -40,6 +41,33 @@ export function sectionKey(seg: Segment): string {
 }
 
 const sectionCache = new WeakMap<readonly Piece[], Section[]>();
+const strandSectionCache = new WeakMap<readonly Strand[], WeakMap<readonly Piece[], Section[]>>();
+
+/** Les sections des contours des pièces et celles des fils (tracés ouverts de l'applique). */
+export function sectionsWithStrands(pieces: readonly Piece[], strands: readonly Strand[]): Section[] {
+  const base = sectionsOf(pieces);
+  if (strands.length === 0) return base;
+  let byPieces = strandSectionCache.get(strands);
+  if (!byPieces) {
+    byPieces = new WeakMap();
+    strandSectionCache.set(strands, byPieces);
+  }
+  const hit = byPieces.get(pieces);
+  if (hit) return hit;
+  const known = new Set(base.map((s) => s.key));
+  const extra: Section[] = [];
+  for (const strand of strands) {
+    for (const seg of strand.segments) {
+      const key = sectionKey(seg);
+      if (known.has(key)) continue;
+      known.add(key);
+      extra.push({ key, seg: oriented(seg) });
+    }
+  }
+  const out = [...base, ...extra];
+  byPieces.set(pieces, out);
+  return out;
+}
 
 /** Les sections des contours de toutes les pièces, chacune une seule fois (une couture sépare deux pièces). */
 export function sectionsOf(pieces: readonly Piece[]): Section[] {

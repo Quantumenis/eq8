@@ -215,3 +215,13 @@ export function svgPathOf(seg: Segment): string {
   const g = arcOf(seg);
   return `${start}A${f(g.radius)} ${f(g.radius)} 0 ${Math.abs(g.sweep) > Math.PI ? 1 : 0} ${g.sweep > 0 ? 1 : 0} ${f(seg.b.x)} ${f(seg.b.y)}`;
 }
+
+/** Tracé SVG (attribut `d`) d'une suite de segments bout à bout, arcs exacts ; `close` ferme le tracé. */
+export function svgPathOfSegments(segs: readonly Segment[], close = false): string {
+  let d = "";
+  segs.forEach((seg, i) => {
+    const part = svgPathOf(seg);
+    d += i === 0 ? part : part.replace(/^M[^LA]*/, "");
+  });
+  return close && d ? `${d}Z` : d;
+}

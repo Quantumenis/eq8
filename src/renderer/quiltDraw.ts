@@ -1,6 +1,7 @@
 // Dessin du plan Quilt sur un Canvas 2D. Aucune logique d'édition ici : on reçoit une scène et on la peint.
 // Tout est tracé dans le repère du centre (pouces) ; le tissu est calé sur le coin du bloc et tourné comme lui.
 
+import { svgPathOfSegments } from "../core/draw/geometry";
 import { piecePath } from "../core/draw/pieces";
 import type { View } from "../core/draw/view";
 import type { AssetStore } from "../core/project/assets";
@@ -186,6 +187,22 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
       }
       ctx.restore();
       if (clipEdge) ctx.restore();
+    }
+    // Fils des motifs et des pochoirs (tracés ouverts) : traits fins, en pointillés bleus au calque 3.
+    for (const st of scene.strands) {
+      if (st.layer !== layer) continue;
+      worldTransform(ctx, s);
+      ctx.save();
+      const m = st.mat;
+      ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      const k = Math.hypot(m[0], m[1]) || 1;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.lineWidth = (layer === 3 ? 2 : 1.5) / view.scale / k;
+      ctx.strokeStyle = layer === 3 ? "#3b66b5" : SEAM;
+      if (layer === 3) ctx.setLineDash([6 / view.scale / k, 3 / view.scale / k]);
+      ctx.stroke(blockPath(st.strand, () => svgPathOfSegments(st.strand.segments)));
+      ctx.restore();
     }
     ctx.restore();
   }

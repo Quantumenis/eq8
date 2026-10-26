@@ -31,6 +31,8 @@ const CHANNELS = {
   getDefaultPalette: "palette:get",
   saveDefaultPalette: "palette:save",
   readSystemFont: "print:read-font",
+  listInstalledFonts: "print:list-fonts",
+  readInstalledFont: "print:read-installed-font",
   exportFile: "print:export-file",
   printDocument: "print:print",
   copyImage: "print:copy-image",
@@ -78,6 +80,8 @@ const api: QuiltStudioApi = {
   saveDefaultPalette: (bytes) => ipcRenderer.invoke(CHANNELS.saveDefaultPalette, bytes),
 
   readSystemFont: (family, bold) => ipcRenderer.invoke(CHANNELS.readSystemFont, family, bold),
+  listInstalledFonts: () => ipcRenderer.invoke(CHANNELS.listInstalledFonts),
+  readInstalledFont: (family, variant) => ipcRenderer.invoke(CHANNELS.readInstalledFont, family, variant),
   exportFile: (kind, suggestedName, bytes) => ipcRenderer.invoke(CHANNELS.exportFile, kind, suggestedName, bytes),
   printDocument: (job) => ipcRenderer.invoke(CHANNELS.printDocument, job),
   copyImage: (png) => ipcRenderer.invoke(CHANNELS.copyImage, png),
