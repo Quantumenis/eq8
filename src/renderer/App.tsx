@@ -22,6 +22,8 @@ import type { LibraryKind } from "./libraryData";
 import { createProjectActions, currentProjectName, getApi, type ProjectActions } from "./projectActions";
 import { session, useSession } from "./projectSession";
 import { useTheme } from "./useTheme";
+import { printSettings, usePrintSettings } from "./printSettings";
+import { FontsDialog, PageSetupDialog } from "./components/PrintSettingsDialogs";
 
 type Worktable = "quilt" | "block" | "image";
 type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "library"; library: LibraryKind } | { kind: "prefs" } | null;
@@ -33,7 +35,7 @@ const WORKTABLES: { id: Worktable; icon: ReactNode }[] = [
 ];
 
 const THEMES: ThemeMode[] = ["light", "dark", "system"];
-const DEFAULT_PREFS: Prefs = { unit: "in", maxColorings: 2, recents: [] };
+const DEFAULT_PREFS: Prefs = { unit: "in", maxColorings: 2, recents: [], print: null };
 const NOTICE_MS = 6000;
 
 export function App() {
@@ -60,6 +62,8 @@ function Workspace() {
   const [modal, setModal] = useState<ModalState>(null);
   const [notice, setNotice] = useState("");
   const [recovery, setRecovery] = useState<RecoveryInfo | null>(null);
+  const printState = usePrintSettings();
+  const countryRef = useRef("");
   const noticeTimer = useRef<number | undefined>(undefined);
 
   const notify = useCallback((message: string) => {
@@ -88,6 +92,8 @@ function Workspace() {
       setVersion(info.version);
       setAutosaveMs(info.autosaveMs);
       setPrefs(loadedPrefs);
+      countryRef.current = info.country;
+      printSettings.load(loadedPrefs.print, info.country);
       let palette = null;
       try {
         palette = paletteBytes ? readQsp(paletteBytes) : null;
@@ -178,6 +184,10 @@ function Workspace() {
           return setModal({ kind: "prefs" });
         case "save-default-palette":
           return void a.saveDefaultPalette();
+        case "page-setup":
+          return printSettings.openDialog("setup");
+        case "print-fonts":
+          return printSettings.openDialog("fonts");
         case "undo":
         case "redo": {
           // Dans un champ de saisie ordinaire, Ctrl+Z défait la saisie ; ailleurs (et dans la fiche, dont chaque
@@ -218,7 +228,9 @@ function Workspace() {
 
   const resetPrefs = useCallback(
     async (alsoPalette: boolean) => {
-      setPrefs(await getApi().resetPreferences(alsoPalette));
+      const next = await getApi().resetPreferences(alsoPalette);
+      setPrefs(next);
+      printSettings.load(next.print, countryRef.current);
       notify(fr.prefs.restored);
     },
     [notify],
@@ -414,6 +426,8 @@ function Workspace() {
           onClose={() => setModal(null)}
         />
       )}
+      {printState.dialog === "setup" && <PageSetupDialog unit={prefs.unit} notify={notify} />}
+      {printState.dialog === "fonts" && <FontsDialog />}
       {recovery && (
         <Modal
           title={fr.dialogs.recoveryTitle}

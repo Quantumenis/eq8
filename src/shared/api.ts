@@ -8,6 +8,8 @@ export interface AppInfo {
   version: string;
   /** Intervalle de la sauvegarde automatique, en millisecondes (2 min, ou la valeur imposée par les tests). */
   autosaveMs: number;
+  /** Pays des paramètres régionaux (« FR », « US »…) : choisit le format de papier par défaut (Q-9.11). */
+  country: string;
 }
 
 export interface Preferences {
@@ -16,6 +18,8 @@ export interface Preferences {
   maxColorings: number;
   /** Projets récents, du plus récent au plus ancien. */
   recents: string[];
+  /** Réglages d'impression (mise en page, polices, épaisseur minimale) : validés par l'interface. */
+  print: unknown;
 }
 
 export interface ProjectEntry {
@@ -63,6 +67,19 @@ export interface DocumentState {
   modified: boolean;
 }
 
+export type ExportKind = "pdf" | "png" | "jpg" | "svg";
+
+/** Un travail d'impression : les pages en HTML (une page SVG par feuille), au format exact de la feuille (pouces). */
+export interface PrintJob {
+  html: string;
+  width: number;
+  height: number;
+  copies: number;
+  title: string;
+}
+
+export type PrintOutcome = { ok: true } | { ok: false; error: "cancelled" | "failed" | "busy" };
+
 export type MenuCommand =
   | "new"
   | "open"
@@ -79,7 +96,9 @@ export type MenuCommand =
   | "undo"
   | "redo"
   | "preferences"
-  | "save-default-palette";
+  | "save-default-palette"
+  | "page-setup"
+  | "print-fonts";
 
 export interface QuiltStudioApi {
   getAppInfo(): Promise<AppInfo>;
@@ -88,7 +107,7 @@ export interface QuiltStudioApi {
   onThemeRequested(listener: (mode: ThemeMode) => void): () => void;
 
   getPreferences(): Promise<Preferences>;
-  setPreferences(patch: Partial<Pick<Preferences, "unit" | "maxColorings">>): Promise<Preferences>;
+  setPreferences(patch: Partial<Pick<Preferences, "unit" | "maxColorings" | "print">>): Promise<Preferences>;
   /** Remet les réglages par défaut ; avec `alsoPalette`, efface aussi la palette par défaut personnalisée. */
   resetPreferences(alsoPalette: boolean): Promise<Preferences>;
 
@@ -128,6 +147,15 @@ export interface QuiltStudioApi {
   getDefaultPalette(): Promise<Uint8Array | null>;
   saveDefaultPalette(bytes: Uint8Array): Promise<void>;
 
+  /** Octets d'une police système (liste fermée de familles), pour l'intégrer au PDF. */
+  readSystemFont(family: string, bold: boolean): Promise<Uint8Array | null>;
+  /** Boîte « Exporter » du système, puis écriture du fichier ; `null` si l'utilisateur annule. */
+  exportFile(kind: ExportKind, suggestedName: string, bytes: Uint8Array): Promise<SaveResult | null>;
+  /** Impression par le dialogue de Windows, en taille réelle. */
+  printDocument(job: PrintJob): Promise<PrintOutcome>;
+  /** Copie une image PNG dans le presse-papiers. */
+  copyImage(png: Uint8Array): Promise<boolean>;
+
   onMenuCommand(listener: (command: MenuCommand, argument?: string) => void): () => void;
   /** La fenêtre veut se fermer alors que le projet est modifié : l'interface décide. */
   onBeforeClose(listener: () => void): () => void;
@@ -162,6 +190,10 @@ export const IPC = {
   deleteFavorite: "favorites:delete",
   getDefaultPalette: "palette:get",
   saveDefaultPalette: "palette:save",
+  readSystemFont: "print:read-font",
+  exportFile: "print:export-file",
+  printDocument: "print:print",
+  copyImage: "print:copy-image",
   menuCommand: "menu:command",
   beforeClose: "window:before-close",
   confirmClose: "window:confirm-close",

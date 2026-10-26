@@ -6,7 +6,9 @@ import path from "node:path";
 import { app } from "electron";
 import type { Preferences, RecoveryInfo } from "../shared/api.js";
 
-export const DEFAULT_PREFERENCES: Preferences = { unit: "in", maxColorings: 2, recents: [] };
+export const DEFAULT_PREFERENCES: Preferences = { unit: "in", maxColorings: 2, recents: [], print: null };
+/** Les réglages d'impression sont gardés tels quels (l'interface les valide), dans une taille raisonnable. */
+const MAX_PRINT_PREFS = 16 * 1024;
 const MAX_RECENTS = 10;
 
 /** Les variables d'environnement servent aux tests : elles isolent les données de l'utilisateur. */
@@ -66,6 +68,7 @@ function sanitizePreferences(raw: unknown): Preferences {
     recents: Array.isArray(r.recents)
       ? r.recents.filter((p): p is string => typeof p === "string" && p.toLowerCase().endsWith(".qsp")).slice(0, MAX_RECENTS)
       : [],
+    print: typeof r.print === "object" && r.print !== null && JSON.stringify(r.print).length <= MAX_PRINT_PREFS ? r.print : null,
   };
 }
 

@@ -52,7 +52,7 @@ export async function killAllApps(): Promise<void> {
   openApps.clear();
 }
 
-export async function launch(sandbox: Sandbox, options: { autosaveMs?: number } = {}): Promise<Launched> {
+export async function launch(sandbox: Sandbox, options: { autosaveMs?: number; env?: Record<string, string> } = {}): Promise<Launched> {
   const app = await electron.launch({
     args: [ROOT],
     cwd: ROOT,
@@ -61,6 +61,7 @@ export async function launch(sandbox: Sandbox, options: { autosaveMs?: number } 
       QUILT_STUDIO_DATA_DIR: sandbox.dataDir,
       QUILT_STUDIO_DOCUMENTS_DIR: sandbox.docsDir,
       ...(options.autosaveMs ? { QUILT_STUDIO_AUTOSAVE_MS: String(options.autosaveMs) } : {}),
+      ...(options.env ?? {}),
     },
   });
   openApps.add(app);

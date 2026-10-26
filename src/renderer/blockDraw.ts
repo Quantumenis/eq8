@@ -62,6 +62,8 @@ export interface ColoringScene {
   focus: string | null;
   /** Section sous le pointeur (outils Fil). */
   hoverSection: string | null;
+  /** Rectangle de l'export d'une sélection (SPEC §10.2), en pouces. */
+  marquee?: { a: Pt; b: Pt } | null;
 }
 
 /** Couleur du contour des pièces choisies par « Sélectionner & vaporiser ». */
@@ -258,6 +260,18 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
     ctx.lineWidth = 3.5 / view.scale;
     ctx.lineJoin = "round";
     for (const piece of s.coloring.pieces) if (s.coloring.highlight.has(piece.key)) ctx.stroke(piecePath2D(piece));
+    ctx.restore();
+  }
+
+  // Export d'une sélection : le rectangle tracé.
+  if (s.coloring?.marquee) {
+    const { a, b } = s.coloring.marquee;
+    ctx.save();
+    ctx.setTransform(s.dpr * view.scale, 0, 0, s.dpr * view.scale, s.dpr * view.originX, s.dpr * view.originY);
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 2 / view.scale;
+    ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+    ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
     ctx.restore();
   }
 

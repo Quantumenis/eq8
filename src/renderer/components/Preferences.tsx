@@ -5,6 +5,7 @@ import type { Preferences as Prefs, UnitPref } from "../../shared/api";
 import { fr } from "../i18n/fr";
 import { useSession } from "../projectSession";
 import { Modal } from "./Modal";
+import { MIN_LINE_CHOICES, printSettings, usePrintSettings } from "../printSettings";
 
 interface Props {
   prefs: Prefs;
@@ -17,6 +18,7 @@ interface Props {
 export function Preferences({ prefs, onChange, onReset, onSavePalette, onClose }: Props) {
   const session = useSession();
   const [alsoPalette, setAlsoPalette] = useState(false);
+  const print = usePrintSettings();
 
   const changeColorings = (raw: string) => {
     const value = clampMaxColorings(Number(raw));
@@ -66,6 +68,20 @@ export function Preferences({ prefs, onChange, onReset, onSavePalette, onClose }
           onChange={(e) => changeColorings(e.target.value)}
         />
         <p className="muted">{fr.prefs.coloringsHelp}</p>
+      </fieldset>
+
+      <fieldset className="prefs-group">
+        <legend>{fr.prefs.printOptions}</legend>
+        <label className="field">
+          <span className="field-label">{fr.print.setup.minLine}</span>
+          <select value={print.minLinePx} data-testid="prefs-min-line" onChange={(e) => printSettings.update({ minLinePx: Number(e.target.value) })}>
+            {MIN_LINE_CHOICES.map((n) => (
+              <option key={n} value={n}>
+                {fr.print.setup.minLinePx(n)}
+              </option>
+            ))}
+          </select>
+        </label>
       </fieldset>
 
       <fieldset className="prefs-group">

@@ -38,6 +38,9 @@ export interface QuiltPaint {
   rulers: boolean;
   /** Pouces par unité affichée (1 pour les pouces, 1/2,54 pour les centimètres) et le nom de l'unité. */
   rulerUnit: { perInch: number; label: string };
+  /** Onglet IMPRIMER & EXPORTER : l'élément choisi (entouré en vert) et le rectangle de l'export d'une sélection. */
+  printMark?: readonly Pt[] | null;
+  marquee?: { a: Pt; b: Pt } | null;
 }
 
 const SEAM = "#24262b";
@@ -257,6 +260,21 @@ export function paintQuilt(ctx: CanvasRenderingContext2D, s: QuiltPaint): void {
     ctx.strokeStyle = palette.accent;
     ctx.lineWidth = 2.5 / view.scale;
     ctx.stroke(polyPath(s.hoverPoly));
+  }
+  if (s.printMark) {
+    ctx.strokeStyle = SELECT_GREEN;
+    ctx.lineWidth = 3.5 / view.scale;
+    ctx.lineJoin = "round";
+    ctx.stroke(polyPath(s.printMark));
+  }
+  if (s.marquee) {
+    const { a, b } = s.marquee;
+    ctx.save();
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 2 / view.scale;
+    ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+    ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    ctx.restore();
   }
   if (s.ghost) {
     ctx.save();

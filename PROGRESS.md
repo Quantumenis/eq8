@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M7 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
+> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M8 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -15,8 +15,9 @@
 | **M4 — Tissus, couleurs et fils** | ✅ terminé | 2026-10-26 |
 | M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ✅ terminé | 2026-10-26 |
 | **M6 — Bordures** | ✅ terminé | 2026-10-26 |
-| **M7 — Impression et PDF à l'échelle, export, métrage** | ⏭️ prochain | — |
-| M8 … M9 | à faire | — |
+| **M7 — Impression et PDF à l'échelle, export, métrage** | ✅ terminé | 2026-10-26 |
+| **M8 — Applique, PolyDraw, blocs combinés, motifs, pochoirs et texte** | ⏭️ prochain | — |
+| M9 | à faire | — |
 
 ## M1 — fait
 
@@ -288,10 +289,59 @@
 - Les règles et le pointeur ne partent pas du coin du quilt fini.
 - Une bordure de style « alignés » ne prend pas automatiquement le nombre de blocs de la bordure intérieure : le bouton « Même nombre que la bordure intérieure » le fait.
 
+## M7 — fait
+
+**Cœur (`src/core/print/`, TypeScript pur)**
+- `display.ts` : la **liste d'affichage unique** (pages en pouces, y vers le bas ; tracés avec arcs exacts et Béziers, textes à 5 rôles de police, groupes transformés et découpés ; remplissage couleur ou **tissu répété**). Transformation des contours (un arc reste un arc sous une similitude, sinon il est aplati), Béziers d'arcs ≤ 90°, boîtes, test « la fenêtre contient-elle quelque chose » (pages vides).
+- `pdf.ts` : sortie **pdf-lib** à l'échelle 1:1 (matrice [72 0 0 −72 0 H], puis tout en pouces), polices système **intégrées par sous-ensemble** (fontkit), Helvetica sinon (métriques d'Arial : `measure.ts`) ; tissus = couleur moyenne + tuiles PNG/JPEG découpées à la pièce. `svg.ts` : la même chose en SVG (export, et page HTML d'impression).
+- `paper.ts` : formats Lettre, A4, Légal, A3, Tabloïd ; orientation ; marges (0,25 à 2 po) ; **format par défaut selon le pays** (Q-9.11) ; **mosaïque** : recouvrement 0,5 po, trait pointillé de raccord, repères de coin, étiquette « L1-C2 », **plan d'assemblage**, pages vides non émises.
+- `offset.ts` : marge de couture = décalage Clipper2 en **onglet** (écrêté au-delà de 4 × la marge). `source.ts` : le « bloc d'impression » depuis le plan Bloc (coloration, taille du plan ou personnalisée, miroir) ou depuis un **élément du quilt** (« Utiliser la taille du quilt », cadre redressé, blocs étirés compris ; droit-fil = sens du tissu posé).
+- `shapes.ts` : **lettres** (même forme à une rotation près ; miroir = autre lettre « (A inversée) », Q-9.4) et comptes **par tissu ou couleur** ; reconnaissance des formes du cutter (Q-9.6 : carré, rectangle, demi-carré, quart de carré, parallélogramme 45°, losanges 45° et 60°, équilatéral, trapèze 45°).
+- `templates.ts` (gabarits : coupe continue, couture en tirets, droit-fil, lettre, « Couper N », nom ; bloc clé Petit 2 po / Grand 3,5 po ; rangement à la suite, mosaïque des grands ; **retouches** supprimer / déplacer / pivoter de 30°), `rotary.ts` + `pages.ts` (découpe rotative arrondie au plus proche 1/8, 1/16, au millième ou au mm ; bande, recoupe, carrés à couper ; diagrammes ; **bloc** en 4 styles, « autant que la page en contient » ; **quilt** à l'échelle de la page ; **métrage**), `yardage.ts` (Q-9.9 : étagères triées par hauteur, rotation de 90°, raboutage des pièces plus longues que la laize, coupons 18 × 21, arrondi 1/8 yd et 10 cm, yards **et** mètres), `foundation.ts` (Q-9.5 : sections par coupes droites récursives, ordre de couture, numérotation A1…, contrôle d'un découpage manuel ; pages en 3 styles, marge autour de chaque section, unités séparées ou non).
+
+**Interface**
+- Onglet **IMPRIMER & EXPORTER** des plans Quilt et Bloc (`PrintPalette`) : Quilt, Métrage, Bloc, Gabarits, Fondation, Découpe rotative (grisés s'ils ne s'appliquent pas ; Photo et Broderie grisés, P2) ; Mise en page, Polices ; Exporter Image, Sélection, et Métafichier (SVG) au plan Bloc. Plan Quilt : un clic sur le calque choisi = élément **entouré de vert**, nom et taille finie affichés.
+- `PrintDialog` : nom + **Appliquer** (met à jour la fiche du carnet), taille (du quilt / du plan, ou personnalisée), copies, options de chaque style, flèches de coloration au plan Bloc, vignette de la 1ʳᵉ page ; **Aperçu** plein écran (`PrintPreview` : zoom, une ou deux pages, Ctrl+molette, retouches des gabarits et fondations), **Exporter en PDF**, **Imprimer**. Sections manuelles de la fondation (clics dans l'ordre, Maj+clic, Grouper, Recommencer).
+- **Impression** : pages SVG dans une fenêtre cachée, `webContents.print` avec le format exact et des marges nulles (taille réelle) ; page de test 1 po / 2 cm dans Mise en page. **Polices de l'imprimante** (5 rôles, 8 polices Windows). Épaisseur minimale des traits (1 à 4 px) dans Mise en page et dans les Préférences. Réglages enregistrés dans les préférences (`print`).
+- **Export d'image** : PNG (avec ppp), JPG (qualité 50), SVG, PDF ; taille en po/cm avec les pixels affichés, proportions, 72 à 600 ppp (150) ; contours ; quilt entier ou bloc sélectionné. **Export d'une sélection** : rectangle tracé sur le quilt ou le bloc → Enregistrer (PNG), Copier, Imprimer.
+- Processus principal : `src/main/print.ts` (polices système sur liste fermée, boîte Exporter dans `Documents\Quilt Studio\Exports`, impression, presse-papiers) ; menu Fichier : Mise en page…, Polices de l'imprimante….
+
+## Vérifications M7 (2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **339/339** (+ 1 ignoré) — dont 28 nouveaux : **PDF 6 po = 432 × 432 pt**, **10 cm = 283,46 pt** (lecture du flux de contenu, `tests/unit/pdf-reader.ts`) ; gabarit sans marge 432 pt, **avec marge : coupe 468 pt** et couture en tirets 432 ; taille personnalisée et miroir ; **20 × 20 po en Lettre portrait = 3 × 3 pages** + plan ; pages vides non émises ; format par pays ; **triangle de 2 po + 1/4 = 2,85355 → 2 7/8** ; découpe **A 2 1/2, B 2 7/8, C 3 1/4** ; **7 × 5 sur 10 po = 1 7/8 × 2 1/2**, sans arrondi **1,929 × 2,5** ; 1/16 et mm ; 5 formes reconnues, courbe omise ; comptes par couleur sur **Ohio Star** et **Churn Dash** ; lettres miroir/rotation ; **métrage : 20 carrés de 4,5 sur 42 po = 3 rangées, 13,5 po, 3/8 yd** ; bordure raboutée ; rotation de 90° ; coupons ; métrique ; fondation (Flying Geese en une section, Ohio Star en sections cousables, Nine Patch en 3 bandes, bloc courbe → manuel) |
+| `npm run e2e` | **39/39** — dont 3 nouveaux (`print.spec.ts`) : Ohio Star posé, élément cliqué (8 × 8 po), **Gabarits → Exporter en PDF** (1 page, lettres A et B, « Couper 5 », « Couper 16 », carré de 192 pt / coupe de 228 pt, pied de page, via `pdftotext`), découpe rotative (3 3/16 et 3 7/8 po) ; métrage, **impression du quilt** (dialogue remplacé par `QUILT_STUDIO_PRINT_TO_PDF`), fondation automatique, export PNG de 1200 px ; plan Bloc : gabarits de 144 pt puis 216 pt (taille 9 po), SVG de 6 po, sélection copiée (PNG de 450 px). Captures `m7-apercu-gabarits.png` et `m7-decoupe-rotative.png` vérifiées à l'œil. Un test du M2 (arc retourné par la barre d'espace) a échoué une fois puis passé 3 fois sur 3 : instable, sans lien avec le M7 |
+| `npm run dist` / `e2e:dist` | 2 exe / 3/3 |
+
+## Décisions prises pendant M7
+
+- **Arrondi au plus proche** (et non au supérieur) : c'est la seule lecture compatible avec les exemples du manuel (2,85355 → 2 7/8 et 1,9286 → 1 7/8). Sans arrondi : au millième, affiché en décimales.
+- **Ordre des lettres** : coin haut-gauche des pièces, de haut en bas puis de gauche à droite (les carrés d'Ohio Star sont A).
+- **« Cross with a Cross »** (exemple p. 225) n'est pas dans notre bibliothèque : les comptes par couleur sont testés sur Ohio Star et Churn Dash, et les cotes A/B/C sur des pièces construites.
+- **Rectangle** : bande = petit côté, recoupe = grand côté. **Quart de carré** reconnu quand l'hypoténuse suit le droit-fil, demi-carré quand ce sont les côtés droits.
+- **Tissus dans le PDF** : la pièce vectorielle est remplie de la tuile réelle répétée (PNG du générateur ou octets de l'image), par-dessus la couleur moyenne ; au-delà de 4 000 tuiles par pièce, couleur moyenne seule.
+- **Épaisseurs** en points, indépendantes du zoom des groupes ; 1 px d'épaisseur minimale = 0,75 pt (96 ppp).
+- **Impression** : toujours depuis la même liste d'affichage, en SVG dans une page HTML au format exact, marges nulles (aucune mise à l'échelle) ; les **copies** ne s'appliquent qu'à l'impression (pas au PDF exporté).
+- **Fondation** : miroir coché par défaut (on coud au verso) ; ordre de couture = on retire d'abord les plus petites pièces détachables ; découpage = le moins de sections possible (mémoïsé).
+- **Métrage** : les pièces non colorées forment une ligne « Non coloré » ; calques 1 et 2 comptés, pochoirs non.
+- **Bloc du plan** : imprimé avec sa coloration en cours (flèches : dessin au trait / coloration du plan) ; le nom vient du bloc d'origine, « Bloc du plan » sinon.
+- `QuiltWorkspace.tsx` et `quiltDraw.ts` repassés en fins de ligne LF comme le reste (git les normalise de toute façon).
+
+## Reporté / limites connues (M7)
+
+- Sectionnement de fondation **non enregistré avec le bloc** (P1) : il dure le temps de la boîte. Pas d'onglet « Numérotation » séparé : l'ordre des clics dans une section donne la numérotation.
+- Photo, Broderie, Mise en page de photos (P2), « Imprimer toute la bordure » (P2), TIF/BMP/EMF (P3) : non faits.
+- Aperçu : pas de zoom par rectangle tracé (boutons et Ctrl+molette seulement). Bloc clé du tableau de découpe sans cercle autour des lettres.
+- L'impression réelle par le dialogue de Windows n'est pas testée automatiquement (le même chemin l'est, en PDF) : à essayer une fois sur l'imprimante, avec la page de test.
+- Les blocs déformés (pointe variable) ont leurs arcs aplatis (polylignes à 10⁻⁴ po).
+
 ## Notes pratiques
 
 - `npm run e2e` reconstruit `out/` avant de tester ; `npm run e2e:dist` suppose `npm run dist` déjà fait.
 - Mettre à jour les captures de référence après un changement d'interface voulu : **supprimer** les PNG concernés (ou `npx playwright test --project=app --update-snapshots`) puis relancer — vérifier l'image avant de valider.
 - La fenêtre modale masque la barre d'outils : dans les tests, annuler/rétablir se pilote par `menuCommand(app, "undo")` quand le carnet est ouvert.
 - Rendu d'une page du manuel (pour lever un doute) : `.venv\Scripts\python.exe -I tools\render_pages.py refs\EQ8_Reference_Manual.pdf refs\img 110 <pages…>`.
+- Pour lire un PDF produit : `pdftotext -enc UTF-8 -layout fichier.pdf -` (installé) ; `tests/unit/pdf-reader.ts` mesure les tracés en points.
 - Versions figées et choix de M0 (Electron 44.7.0, React 19.3.0, Vite 8.3.4, TypeScript 7.0.2, electron-builder 26.17.0, clipper2-ts 2.0.1, pdf-lib 1.17.1, fflate 0.8.3, opentype.js 2.0.0) : inchangés.

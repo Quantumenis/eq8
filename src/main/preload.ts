@@ -30,6 +30,10 @@ const CHANNELS = {
   deleteFavorite: "favorites:delete",
   getDefaultPalette: "palette:get",
   saveDefaultPalette: "palette:save",
+  readSystemFont: "print:read-font",
+  exportFile: "print:export-file",
+  printDocument: "print:print",
+  copyImage: "print:copy-image",
   menuCommand: "menu:command",
   beforeClose: "window:before-close",
   confirmClose: "window:confirm-close",
@@ -72,6 +76,11 @@ const api: QuiltStudioApi = {
 
   getDefaultPalette: () => ipcRenderer.invoke(CHANNELS.getDefaultPalette),
   saveDefaultPalette: (bytes) => ipcRenderer.invoke(CHANNELS.saveDefaultPalette, bytes),
+
+  readSystemFont: (family, bold) => ipcRenderer.invoke(CHANNELS.readSystemFont, family, bold),
+  exportFile: (kind, suggestedName, bytes) => ipcRenderer.invoke(CHANNELS.exportFile, kind, suggestedName, bytes),
+  printDocument: (job) => ipcRenderer.invoke(CHANNELS.printDocument, job),
+  copyImage: (png) => ipcRenderer.invoke(CHANNELS.copyImage, png),
 
   onMenuCommand: (listener) => {
     const handler = (_event: unknown, command: MenuCommand, argument?: string) => listener(command, argument);

@@ -6,6 +6,7 @@ import "./project.css";
 import "./block.css";
 import "./fabric.css";
 import "./quilt.css";
+import "./print.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Élément #root introuvable");

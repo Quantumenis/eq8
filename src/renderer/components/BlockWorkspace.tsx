@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FUSSY_BIG_STEP, FUSSY_STEP, findPaletteEntry, fussyCut, paintPieces, paletteEntries, samePaint, similarPieces } from "../../core/draw/coloring";
 import {
+  cleanDrawing,
   clearGuides,
   convertToGuides,
+  toDrawing,
   isValidSnapCount,
   resizeBlock,
   setFills,
@@ -17,7 +19,10 @@ import { DEFAULT_THREAD, applyThread, sectionAt, sectionsOf } from "../../core/d
 import { addNodesAt, addNodesAtIntersections, MAX_PARTS, partitionParams, staggerParams } from "../../core/draw/nodes";
 import { analyzeBlock, type Piece } from "../../core/draw/pieces";
 import { transformSelection, type MirrorAxis, type TransformSpec } from "../../core/draw/transform";
-import type { Id, Paint } from "../../core/project/model";
+import { emptyNotecard, type BlockItem, type Id, type Paint } from "../../core/project/model";
+import { blockPicture } from "../../core/print/kit";
+import { rotaryChart } from "../../core/print/rotary";
+import { blockSource } from "../../core/print/source";
 import { fromInches, toInches, type DisplayUnit } from "../../core/units";
 import { chooseColoring, cleanCurrentDrawing, cleanupReport, sourceBlock } from "../blockActions";
 import { blockEditor, useBlockEditor } from "../blockEditor";
@@ -32,6 +37,9 @@ import { ColoringPalette, isThreadTool, type ColorTool } from "./ColoringPalette
 import { useColorTools } from "./ColorTools";
 import { useDialogs } from "./Dialogs";
 import { Check, NumberField } from "./fields";
+import { PrintPalette } from "./PrintPalette";
+import { PrintDialog, type PrintKind, type PrintSubject } from "./PrintDialog";
+import { ExportImageDialog, SelectionDialog, type Picture } from "./ExportDialogs";
 
 interface Props {
   /** Onglet du ruban : 0 NOUVEAU BLOC, 1 DESSIN, 2 COLORATION, 3 IMPRIMER & EXPORTER. */
@@ -68,6 +76,13 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   const fussyCount = useRef(0);
   const colorTools = useColorTools(notify);
   useFabricTiles();
+  // Onglet IMPRIMER & EXPORTER.
+  const [printing, setPrinting] = useState<PrintKind | null>(null);
+  const [exportOpen, setExportOpen] = useState<false | "png" | "svg">(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [marquee, setMarquee] = useState<{ a: Pt; b: Pt } | null>(null);
+  const marqueeStart = useRef<Pt | null>(null);
+  const [selectionPic, setSelectionPic] = useState<Picture | null>(null);
 
   // ---- Onglet COLORATION -------------------------------------------------------------------------------------
 
@@ -81,7 +96,7 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   }, [tab]);
 
   const pieces = useMemo<readonly Piece[]>(
-    () => (tab === 2 ? analyzeBlock(draft.width, draft.height, draft.segments).pieces : []),
+    () => (tab === 2 || tab === 3 ? analyzeBlock(draft.width, draft.height, draft.segments).pieces : []),
     [tab, draft.width, draft.height, draft.segments],
   );
   const pieceKeys = useMemo(() => new Set(pieces.map((p) => p.key)), [pieces]);
@@ -230,6 +245,81 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
         }
       : undefined;
   const source = tab === 2 ? sourceBlock() : null;
+
+  // Le bloc du plan, tel qu'il s'imprime : le dessin nettoyé et la coloration en cours (SPEC §9.1).
+  const planBlock = useMemo<BlockItem | null>(() => {
+    if (tab !== 3) return null;
+    const cleaned = cleanDrawing(draft).draft;
+    const src = sourceBlock();
+    const colored = Object.keys(draft.fills).length > 0;
+    return {
+      id: "plan",
+      card: emptyNotecard(src?.card.name || fr.print.planBlock),
+      width: draft.width,
+      height: draft.height,
+      drawing: toDrawing(cleaned),
+      colorings: colored ? [{ id: "plan", fills: { ...draft.fills }, ...(Object.keys(draft.threads).length > 0 ? { threads: { ...draft.threads } } : {}) }] : [],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, draft, project]);
+  const printSubject = useMemo<PrintSubject | null>(
+    () => (planBlock ? { from: "plan", block: planBlock, coloring: planBlock.colorings.length > 0 ? 1 : 0, sourceId: editor.sourceBlockId } : null),
+    [planBlock, editor.sourceBlockId],
+  );
+  const printEnabled = useMemo(() => {
+    const kinds = new Set<PrintKind>();
+    if (!planBlock || pieces.length === 0) return kinds;
+    kinds.add("block").add("templates").add("foundation");
+    const pb = blockSource(planBlock, null, { width: planBlock.width, height: planBlock.height }, false, "");
+    if (rotaryChart(pb, 0.25, "1/16", unit).cuts.length > 0) kinds.add("rotary");
+    return kinds;
+  }, [planBlock, pieces, unit]);
+  const planPicture = (): Picture | null => {
+    if (!planBlock) return null;
+    const pb = blockSource(planBlock, planBlock.colorings[0] ?? null, { width: planBlock.width, height: planBlock.height }, false, planBlock.card.name);
+    const style = planBlock.colorings.length > 0 ? "fabric" : "line";
+    return { name: pb.name, x0: 0, y0: 0, width: pb.width, height: pb.height, items: (o) => blockPicture(pb, project, { style, width: 0.75, blockOutline: o.blockOutlines, pieceOutlines: o.pieceOutlines }) };
+  };
+  const printLayer: ColoringLayer | undefined =
+    tab === 3
+      ? {
+          pieces,
+          fillOf: (key) => pieceFill(project, current.assets, draft.fills[key]),
+          sections,
+          threadOf: (key) => draft.threads[key] ?? DEFAULT_THREAD,
+          highlight: new Set<string>(),
+          focus: null,
+          marquee: selectionMode ? marquee : null,
+          onPress: ({ point }) => {
+            if (!selectionMode) return false;
+            marqueeStart.current = point;
+            setMarquee({ a: point, b: point });
+            return true;
+          },
+          onDrag: (point) => {
+            if (marqueeStart.current) setMarquee({ a: marqueeStart.current, b: point });
+          },
+          onRelease: () => {
+            const a = marqueeStart.current;
+            marqueeStart.current = null;
+            const m = marquee;
+            if (!a || !m) return;
+            const x0 = Math.min(m.a.x, m.b.x);
+            const y0 = Math.min(m.a.y, m.b.y);
+            const w = Math.abs(m.b.x - m.a.x);
+            const h = Math.abs(m.b.y - m.a.y);
+            const pic = planPicture();
+            if (!pic || w < 0.05 || h < 0.05) {
+              setMarquee(null);
+              notify(fr.print.selection.empty);
+              return;
+            }
+            setSelectionPic({ ...pic, x0, y0, width: w, height: h });
+          },
+          targetsSections: false,
+          cursor: selectionMode ? "crosshair" : "default",
+        }
+      : undefined;
 
   // Les identifiants disparus (annulation, suppression) sortent de la sélection.
   const selection = useMemo(() => {
@@ -442,7 +532,20 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
       )}
       {colorTools.element}
 
-      {tab === 3 && <p className="palette-empty">{fr.draw.soon}</p>}
+      {tab === 3 && (
+        <PrintPalette
+          plan="block"
+          enabled={printEnabled}
+          selection={null}
+          selectionMode={selectionMode}
+          onPrint={(kind) => setPrinting(kind)}
+          onExportImage={(format) => setExportOpen(format ?? "png")}
+          onToggleSelection={() => {
+            setSelectionMode((m) => !m);
+            setMarquee(null);
+          }}
+        />
+      )}
     </aside>
   );
 
@@ -572,9 +675,24 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
           unit={unit}
           lastAdded={lastAdded}
           onAdded={setLastAdded}
-          coloring={coloringLayer}
+          coloring={tab === 3 ? printLayer : coloringLayer}
         />
       </main>
+      {printing && printSubject && <PrintDialog kind={printing} subject={printSubject} unit={unit} notify={notify} onClose={() => setPrinting(null)} />}
+      {exportOpen && planBlock && (() => {
+        const pic = planPicture();
+        return pic ? <ExportImageDialog pictures={{ whole: pic, selected: null }} unit={unit} notify={notify} initialFormat={exportOpen} onClose={() => setExportOpen(false)} /> : null;
+      })()}
+      {selectionPic && (
+        <SelectionDialog
+          picture={selectionPic}
+          notify={notify}
+          onClose={() => {
+            setSelectionPic(null);
+            setMarquee(null);
+          }}
+        />
+      )}
     </>
   );
 }

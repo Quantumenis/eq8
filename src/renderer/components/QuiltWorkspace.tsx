@@ -75,6 +75,15 @@ import { KindChooser, LayoutPanel } from "./QuiltLayoutPanel";
 import { AutoBorders, BorderPanel } from "./QuiltBorderPanel";
 import { BlockSvg } from "./Thumb";
 import { pieceFill } from "../paintView";
+import { blockPicture } from "../../core/print/kit";
+import { quiltPicture } from "../../core/print/pages";
+import { rotaryChart } from "../../core/print/rotary";
+import { quiltElement, quiltSource } from "../../core/print/source";
+import { printContext } from "../printSettings";
+import { currentProjectName } from "../projectActions";
+import { PrintPalette } from "./PrintPalette";
+import { PrintDialog, type PrintKind, type PrintSubject } from "./PrintDialog";
+import { ExportImageDialog, SelectionDialog, type Picture } from "./ExportDialogs";
 
 type BlockTool = "set" | "eyedropperBlock" | "rotate" | "mirror" | "erase" | "adjust" | "symmetry" | "tape";
 type PaintTool = "brush" | "spray" | "selectSpray" | "swap" | "selectSwap" | "fussy" | "rotateFabric" | "eyedropperFabric" | "eyedropperColor" | "randomize";
@@ -164,6 +173,14 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     borderStyle: loadOption<BorderStyle>("borderStyle", "longH"),
   }));
   const [selectedBorder, setSelectedBorder] = useState<string | null>(null);
+  // Onglet IMPRIMER & EXPORTER : l'élément choisi, la boîte ouverte, l'export d'une sélection.
+  const [printOwner, setPrintOwner] = useState<string | null>(null);
+  const [printing, setPrinting] = useState<PrintKind | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [marquee, setMarquee] = useState<{ a: Pt; b: Pt } | null>(null);
+  const marqueeStart = useRef<Pt | null>(null);
+  const [selectionPic, setSelectionPic] = useState<Picture | null>(null);
   const [autoPreset, setAutoPreset] = useState<AutoBorder | null>(null);
   const gesture = useRef<Gesture | null>(null);
   const clipboard = useRef<FreeItem[]>([]);
@@ -470,6 +487,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
 
   const onPointer = (info: PointerInfo) => {
     if (info.kind === "leave") return setHoverSlot(null);
+    if (tab === 4) return onPrintPointer(info);
     if (tab !== 3) {
       // Onglet BORDURES : un clic sur le quilt choisit la bordure.
       if (info.kind === "down" && tab === 2) {
@@ -633,6 +651,35 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     }
   };
 
+  // Onglet IMPRIMER & EXPORTER : un clic choisit l'élément du calque ; en mode Sélection, on tire un rectangle.
+  const onPrintPointer = (info: PointerInfo) => {
+    if (selectionMode) {
+      if (info.kind === "down") {
+        marqueeStart.current = info.world;
+        setMarquee({ a: info.world, b: info.world });
+      } else if (info.kind === "move" && marqueeStart.current) {
+        setMarquee({ a: marqueeStart.current, b: info.world });
+      } else if (info.kind === "up" && marqueeStart.current) {
+        const a = marqueeStart.current;
+        marqueeStart.current = null;
+        const x0 = Math.min(a.x, info.world.x);
+        const y0 = Math.min(a.y, info.world.y);
+        const w = Math.abs(info.world.x - a.x);
+        const h = Math.abs(info.world.y - a.y);
+        if (w < 0.05 || h < 0.05) {
+          setMarquee(null);
+          return notify(fr.print.selection.empty);
+        }
+        const sc = sceneRef.current;
+        setSelectionPic({ name: quiltTitle, x0, y0, width: w, height: h, items: (o) => quiltPicture(sc, printContext(project, currentProjectName(), unit), { style: "fabric", blockOutlines: o.blockOutlines, pieceOutlines: o.pieceOutlines, lineWidth: 0.75 }) });
+      }
+      return;
+    }
+    if (info.kind !== "down") return;
+    const piece = pieceAtPoint(sceneRef.current, info.world, layer);
+    setPrintOwner(piece && !hidden.has(piece.layer) ? piece.owner : null);
+  };
+
   const adjustDown = (info: PointerInfo) => {
     const sc = sceneRef.current;
     const only = selectedItem();
@@ -758,8 +805,40 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
     return e ? { a: e.a, b: e.b } : null;
   }, [edge, scene]);
 
+  const quiltTitle = (quiltEditor.sourceQuiltId ? project.sketchbook.quilts.find((q) => q.id === quiltEditor.sourceQuiltId)?.card.name : undefined) || fr.quilt.quiltName;
+  const printElement = useMemo(() => (tab === 4 && printOwner ? quiltElement(scene, project, printOwner, fr.print.roles) : null), [tab, printOwner, scene, project]);
+  const printEnabled = useMemo(() => {
+    const kinds = new Set<PrintKind>(["quilt", "yardage"]);
+    if (printElement) {
+      kinds.add("block").add("templates").add("foundation");
+      const pb = quiltSource(scene, printElement.owner, printElement.name, null, false);
+      if (pb && rotaryChart(pb, 0.25, "1/16", unit).cuts.length > 0) kinds.add("rotary");
+    }
+    return kinds;
+  }, [printElement, scene, unit]);
+  const printBlockId = printElement ? (scene.pieces.find((p) => p.owner === printElement.owner && p.ref)?.ref?.blockId ?? null) : null;
+  const sourceQuiltId = quiltEditor.sourceQuiltId;
+  const printSubject = useMemo<PrintSubject>(
+    () =>
+      printing !== "quilt" && printing !== "yardage" && printElement
+        ? { from: "quilt", scene, element: printElement, blockId: printBlockId }
+        : { from: "quiltWhole", scene, name: quiltTitle, quiltId: sourceQuiltId },
+    [printing, printElement, scene, printBlockId, quiltTitle, sourceQuiltId],
+  );
+  const pictures = (): { whole: Picture; selected: Picture | null } => {
+    const ctx = printContext(project, currentProjectName(), unit);
+    const b = scene.bounds;
+    const sc = scene;
+    const whole: Picture = { name: quiltTitle, x0: b.x0, y0: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, items: (o) => quiltPicture(sc, ctx, { style: "fabric", blockOutlines: o.blockOutlines, pieceOutlines: o.pieceOutlines, lineWidth: 0.75 }) };
+    const pb = printElement ? quiltSource(sc, printElement.owner, printElement.name, null, false) : null;
+    const selected: Picture | null = pb ? { name: pb.name, x0: 0, y0: 0, width: pb.width, height: pb.height, items: (o) => blockPicture(pb, project, { style: "fabric", width: 0.75, blockOutline: o.blockOutlines, pieceOutlines: o.pieceOutlines }) } : null;
+    return { whole, selected };
+  };
+
   const paintProps = {
     scene,
+    printMark: tab === 4 && printElement && !selectionMode ? printElement.outline : null,
+    marquee: tab === 4 && selectionMode ? marquee : null,
     project,
     assets: current.assets,
     hidden: tab === 3 ? hidden : (new Set<Layer>() as ReadonlySet<Layer>),
@@ -1203,7 +1282,20 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
         />
       )}
       {tab === 3 && designPalette}
-      {tab === 4 && <p className="palette-empty">{fr.draw.soon}</p>}
+      {tab === 4 && (
+        <PrintPalette
+          plan="quilt"
+          enabled={printEnabled}
+          selection={printElement ? fr.print.selected(printElement.name, `${formatLength(printElement.width, unit, 3)} × ${formatLength(printElement.height, unit, 3)}`) : null}
+          selectionMode={selectionMode}
+          onPrint={(kind) => setPrinting(kind)}
+          onExportImage={() => setExportOpen(true)}
+          onToggleSelection={() => {
+            setSelectionMode((m) => !m);
+            setMarquee(null);
+          }}
+        />
+      )}
       {colorTools.element}
     </aside>
   );
@@ -1222,7 +1314,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
             {fr.quilt.clearQuilt}
           </button>
         </div>
-        <QuiltCanvas paint={canvasPaint} onPointer={onPointer} onDrop={onDropBlock} cursor={cursor} fitKey={`${total.width}x${total.height}`} footer={finished} />
+        <QuiltCanvas paint={canvasPaint} onPointer={onPointer} onDrop={onDropBlock} cursor={tab === 4 ? (selectionMode ? "crosshair" : "pointer") : cursor} fitKey={`${total.width}x${total.height}`} footer={finished} />
         <div className="layer-tabs" role="tablist" aria-label={fr.quilt.layers[1]} data-testid="layer-tabs">
           {([1, 2, 3] as Layer[]).map((l) => (
             <div key={l} className="layer-tab">
@@ -1251,6 +1343,26 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
           ))}
         </div>
       </main>
+      {printing && (
+        <PrintDialog
+          kind={printing}
+          subject={printSubject}
+          unit={unit}
+          notify={notify}
+          onClose={() => setPrinting(null)}
+        />
+      )}
+      {exportOpen && <ExportImageDialog pictures={pictures()} unit={unit} notify={notify} onClose={() => setExportOpen(false)} />}
+      {selectionPic && (
+        <SelectionDialog
+          picture={selectionPic}
+          notify={notify}
+          onClose={() => {
+            setSelectionPic(null);
+            setMarquee(null);
+          }}
+        />
+      )}
     </>
   );
 }

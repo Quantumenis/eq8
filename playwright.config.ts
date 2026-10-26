@@ -10,7 +10,7 @@ export default defineConfig({
   snapshotPathTemplate: "tests/e2e/__screenshots__/{arg}{ext}",
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   projects: [
-    { name: "app", testMatch: /(app|project|block|coloring|fabric|quilt)\.spec\.ts/ },
+    { name: "app", testMatch: /(app|project|block|coloring|fabric|quilt|print)\.spec\.ts/ },
     { name: "portable", testMatch: /portable\.spec\.ts/ },
   ],
 });

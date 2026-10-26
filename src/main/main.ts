@@ -13,6 +13,7 @@ import {
 } from "../shared/api.js";
 import { handle } from "./ipc.js";
 import { registerLibraryIpc } from "./library.js";
+import { registerPrintIpc } from "./print.js";
 import { registerProjectIpc } from "./projects.js";
 import {
   DEFAULT_PREFERENCES,
@@ -124,6 +125,9 @@ async function buildMenu(): Promise<void> {
         command("Ajouter au carnet", "add-to-sketchbook", "CmdOrCtrl+Shift+A"),
         command("Afficher le carnet", "show-sketchbook", "CmdOrCtrl+B"),
         { type: "separator" },
+        command("Mise en page…", "page-setup"),
+        command("Polices de l'imprimante…", "print-fonts"),
+        { type: "separator" },
         command("Enregistrer la palette comme défaut", "save-default-palette"),
         command("Préférences…", "preferences", "CmdOrCtrl+,"),
         { type: "separator" },
@@ -195,7 +199,7 @@ async function buildMenu(): Promise<void> {
 }
 
 function registerIpc(): void {
-  handle(IPC.getAppInfo, (): AppInfo => ({ name: APP_NAME, version: app.getVersion(), autosaveMs: autosaveIntervalMs() }));
+  handle(IPC.getAppInfo, (): AppInfo => ({ name: APP_NAME, version: app.getVersion(), autosaveMs: autosaveIntervalMs(), country: app.getLocaleCountryCode() || "" }));
   handle(IPC.setTheme, (_event, mode: unknown) => {
     if (mode === "light" || mode === "dark" || mode === "system") {
       nativeTheme.themeSource = mode;
@@ -210,6 +214,7 @@ function registerIpc(): void {
       ...current,
       ...(p.unit === "in" || p.unit === "cm" ? { unit: p.unit } : {}),
       ...(typeof p.maxColorings === "number" ? { maxColorings: p.maxColorings } : {}),
+      ...(p.print !== undefined ? { print: p.print } : {}),
     });
   });
   handle(IPC.resetPreferences, async (_event, alsoPalette: unknown): Promise<Preferences> => {
@@ -239,6 +244,7 @@ function registerIpc(): void {
   });
 
   registerLibraryIpc(() => mainWindow);
+  registerPrintIpc(() => mainWindow);
   registerProjectIpc({
     getWindow: () => mainWindow,
     onRecentsChanged: () => void buildMenu(),
