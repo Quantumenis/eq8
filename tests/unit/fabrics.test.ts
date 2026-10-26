@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { generatedAverage, generatedHash, renderGenerated, GENERATORS } from "../../src/core/fabric/generator";
 import { averageColor, pixelAt } from "../../src/core/image/raster";
 import { LIBRARY_FABRICS, fabricLibraryTree, instantiateLibraryFabric, libraryFabricAverage } from "../../src/core/library/fabrics";
+import { FABRIC_AVERAGES } from "../../src/core/library/fabricAverages";
 import { LIBRARY_THREADS, instantiateLibraryThread } from "../../src/core/library/threads";
 import { searchByColor, searchByText, foldText } from "../../src/core/library/search";
 import { addToSketchbook } from "../../src/core/project/commands";
@@ -75,6 +76,10 @@ describe("bibliothèque de tissus et de fils", () => {
     const first = addToSketchbook(project, "fabrics", instantiateLibraryFabric(def));
     expect(first.status).toBe("added");
     expect(addToSketchbook(first.project, "fabrics", instantiateLibraryFabric(def)).status).toBe("duplicate");
+  });
+
+  it("la table des couleurs moyennes précalculées correspond au générateur", () => {
+    for (const def of LIBRARY_FABRICS) expect(FABRIC_AVERAGES[def.id], def.id).toBe(generatedAverage(def.source));
   });
 
   it("les fils ont un nom, un numéro unique et une couleur", () => {

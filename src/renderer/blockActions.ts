@@ -1,9 +1,10 @@
 import { pruneFills } from "../core/draw/coloring";
-import { cleanDrawing, fromDrawing, isEmpty, setFills, toDrawing } from "../core/draw/draft";
+import { cleanDrawing, fromDrawing, isEmpty, setFills, setThreads, toDrawing } from "../core/draw/draft";
+import { pruneThreads, sectionsOf } from "../core/draw/threads";
 import type { Segment } from "../core/draw/geometry";
 import type { PieceAnalysis } from "../core/draw/pieces";
 import { addColoredBlock } from "../core/project/commands";
-import { createId, emptyNotecard, findBlock, type BlockItem, type Id } from "../core/project/model";
+import { createId, emptyNotecard, findBlock, type BlockItem, type Coloring, type Id } from "../core/project/model";
 import { formatLength, type DisplayUnit } from "../core/units";
 import { blockEditor } from "./blockEditor";
 import { fr } from "./i18n/fr";
@@ -47,7 +48,9 @@ export function addCurrentBlock(): AddBlockResult {
   const draft = blockEditor.draft;
   if (isEmpty(draft)) return { outcome: "empty", cleanup };
   const fills = pruneFills(draft.fills, analysis.pieces);
-  const coloring = Object.keys(fills).length > 0 ? { id: createId(), fills } : null;
+  const threads = pruneThreads(draft.threads, sectionsOf(analysis.pieces));
+  const hasThreads = Object.keys(threads).length > 0;
+  const coloring: Coloring | null = Object.keys(fills).length > 0 || hasThreads ? { id: createId(), fills, ...(hasThreads ? { threads } : {}) } : null;
   const count = session.project.sketchbook.blocks.length;
   let result: AddBlockResult = { outcome: "duplicate", cleanup };
   let blockId: Id | null = null;
@@ -78,8 +81,9 @@ export function editBlockFromSketchbook(id: Id, coloringIndex?: number): boolean
   const found = findBlock(session.project, id);
   if (!found) return false;
   const index = coloringIndex ?? (found.block.colorings.length > 0 ? 1 : 0);
-  const fills = index > 0 ? found.block.colorings[index - 1]?.fills : undefined;
-  const draft = fromDrawing(found.block.drawing, found.block.width, found.block.height, blockEditor.draft.guides, fills);
+  const coloring = index > 0 ? found.block.colorings[index - 1] : undefined;
+  const fills = coloring?.fills;
+  const draft = fromDrawing(found.block.drawing, found.block.width, found.block.height, blockEditor.draft.guides, fills, coloring?.threads);
   blockEditor.load(draft, id, fills ? index : 0);
   return true;
 }
@@ -94,8 +98,8 @@ export function sourceBlock(): BlockItem | null {
 export function chooseColoring(index: number): boolean {
   const block = sourceBlock();
   if (!block || index < 0 || index > block.colorings.length) return false;
-  const fills = index > 0 ? (block.colorings[index - 1]?.fills ?? {}) : {};
-  blockEditor.execute(fr.coloring.history.choose, (d) => setFills(d, fills));
+  const coloring = index > 0 ? block.colorings[index - 1] : undefined;
+  blockEditor.execute(fr.coloring.history.choose, (d) => setThreads(setFills(d, coloring?.fills ?? {}), coloring?.threads ?? {}));
   blockEditor.setSource(block.id, index);
   return true;
 }

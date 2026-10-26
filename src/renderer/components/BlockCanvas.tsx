@@ -4,25 +4,29 @@ import type { BlockEditor } from "../../core/draw/editor";
 import { arcOf, boundsOf, dist, project, sagittaThrough, unionBounds, type Pt, type Segment } from "../../core/draw/geometry";
 import { addNodesAt } from "../../core/draw/nodes";
 import { pieceAt, type Piece } from "../../core/draw/pieces";
+import { sectionAt } from "../../core/draw/threads";
 import { snapPoint, toleranceInInches, type SnapResult } from "../../core/draw/snap";
 import { arcSegment, gridSegments, hitTest, lineSegment } from "../../core/draw/tools";
 import { ACTUAL_SIZE, ZOOM_STEP, fitView, pan, stepZoom, toWorld, zoomAt, zoomPercent, type View } from "../../core/draw/view";
 import { formatLength, type DisplayUnit } from "../../core/units";
 import type { Id } from "../../core/project/model";
-import { paint, readPalette, type Palette } from "../blockDraw";
+import { paint, readPalette, type ColoringScene, type Palette } from "../blockDraw";
 import { fr } from "../i18n/fr";
 
 export type Tool = "pick" | "edit" | "line" | "arc" | "grid";
 export type NodeMode = "move" | "here";
 
-/** Onglet COLORATION : les pièces remplacent les outils de dessin. */
-export interface ColoringLayer {
-  pieces: readonly Piece[];
-  /** Couleur d'affichage d'une pièce, ou `null` si elle n'est pas colorée. */
-  colorOf: (key: string) => string | null;
-  /** Pièces entourées en vert (Sélectionner & vaporiser). */
-  highlight: ReadonlySet<string>;
-  onPiece: (piece: Piece | null) => void;
+/** Onglet COLORATION : les pièces et leurs coutures remplacent les outils de dessin. */
+export interface ColoringLayer extends Omit<ColoringScene, "hoverSection"> {
+  /**
+   * Clic dans le bloc : la pièce touchée (ou `null`), le point (pouces) et la tolérance de clic (pouces).
+   * Renvoie vrai pour suivre le glissement (coupe ciblée).
+   */
+  onPress: (press: { piece: Piece | null; point: Pt; tolerance: number; shift: boolean; ctrl: boolean }) => boolean;
+  onDrag?: (point: Pt) => void;
+  onRelease?: () => void;
+  /** Les outils Fil visent une couture : la section sous le pointeur est mise en évidence. */
+  targetsSections: boolean;
   cursor: string;
 }
 
@@ -44,7 +48,8 @@ type Drag =
   | { kind: "move"; ids: Id[]; ref: Pt; downRaw: Pt; dx: number; dy: number }
   | { kind: "node"; node: Pt; target: Pt }
   | { kind: "sagitta"; id: Id; handle: "apex" | "tent"; value: number }
-  | { kind: "pan"; x: number; y: number };
+  | { kind: "pan"; x: number; y: number }
+  | { kind: "coloring" };
 
 const SEGMENT_PICK_PX = 8;
 const NODE_PICK_PX = 10;
@@ -62,6 +67,7 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
   const [view, setView] = useState<View>({ scale: ACTUAL_SIZE, originX: 40, originY: 40 });
   const [pointer, setPointer] = useState<Pt | null>(null);
   const [hover, setHover] = useState<SnapResult | null>(null);
+  const [hoverSection, setHoverSection] = useState<string | null>(null);
   const [dragTick, setDragTick] = useState(0);
   const [themeTick, setThemeTick] = useState(0);
   const fitted = useRef(true);
@@ -162,7 +168,17 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       hover: coloring ? null : hover,
       showNodes: !coloring && tool === "edit",
       palette: paletteRef.current,
-      coloring: coloring ? { pieces: coloring.pieces, colorOf: coloring.colorOf, highlight: coloring.highlight } : null,
+      coloring: coloring
+        ? {
+            pieces: coloring.pieces,
+            fillOf: coloring.fillOf,
+            sections: coloring.sections,
+            threadOf: coloring.threadOf,
+            highlight: coloring.highlight,
+            focus: coloring.focus,
+            hoverSection: coloring.targetsSections ? hoverSection : null,
+          }
+        : null,
     });
   });
   void themeTick;
@@ -242,7 +258,11 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
 
     const layer = live.current.coloring;
     if (layer) {
-      layer.onPiece(pieceAt(layer.pieces, raw));
+      const follow = layer.onPress({ piece: pieceAt(layer.pieces, raw), point: raw, tolerance: tol(SEGMENT_PICK_PX), shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+      if (follow) {
+        drag.current = { kind: "coloring" };
+        canvas.setPointerCapture(e.pointerId);
+      }
       return;
     }
 
@@ -333,7 +353,13 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
     const g = drag.current;
     const { draft: d, tool: t } = live.current;
     if (!g) {
-      setHover(!live.current.coloring && (t === "line" || t === "arc" || t === "grid") ? snap(raw) : null);
+      const layer = live.current.coloring;
+      setHover(!layer && (t === "line" || t === "arc" || t === "grid") ? snap(raw) : null);
+      setHoverSection(layer?.targetsSections ? (sectionAt(layer.sections, raw, tol(SEGMENT_PICK_PX))?.key ?? null) : null);
+      return;
+    }
+    if (g.kind === "coloring") {
+      live.current.coloring?.onDrag?.(raw);
       return;
     }
     if (g.kind === "pan") {
@@ -378,6 +404,11 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
     drag.current = null;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
     setHover(null);
+    if (g?.kind === "coloring") {
+      live.current.coloring?.onRelease?.();
+      refresh();
+      return;
+    }
     if (!g || cancelled || g.kind === "pan") {
       refresh();
       return;
@@ -467,7 +498,7 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       data-segments={JSON.stringify(draft.segments)}
       data-guides={draft.guides.length}
       data-pieces={coloring?.pieces.length}
-      data-filled={coloring?.pieces.filter((p) => coloring.colorOf(p.key) !== null).length}
+      data-filled={coloring?.pieces.filter((p) => coloring.fillOf(p.key) !== null).length}
     >
       <canvas
         ref={canvasRef}
@@ -485,6 +516,7 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
         onPointerCancel={(e) => finish(e, true)}
         onPointerLeave={() => {
           setPointer(null);
+          setHoverSection(null);
           if (!drag.current) setHover(null);
         }}
         onContextMenu={(e) => e.preventDefault()}

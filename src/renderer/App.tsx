@@ -10,15 +10,18 @@ import { BlockWorkspace } from "./components/BlockWorkspace";
 import { Sketchbook } from "./components/Sketchbook";
 import { fr } from "./i18n/fr";
 import { BlockIcon, ImageIcon, LogoIcon, QuiltIcon } from "./icons";
-import { BlockLibrary } from "./components/BlockLibrary";
+import { Library } from "./components/Library";
+import { ImageWorkspace, type ImageRequests } from "./components/ImageWorkspace";
 import { addCurrentBlock, cleanupReport, editBlockFromSketchbook } from "./blockActions";
 import { blockEditor, useBlockEditor } from "./blockEditor";
+import { imageEditor, useImageEditor } from "./imageEditor";
+import type { LibraryKind } from "./libraryData";
 import { createProjectActions, currentProjectName, getApi, type ProjectActions } from "./projectActions";
 import { session, useSession } from "./projectSession";
 import { useTheme } from "./useTheme";
 
 type Worktable = "quilt" | "block" | "image";
-type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "library" } | { kind: "prefs" } | null;
+type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "library"; library: LibraryKind } | { kind: "prefs" } | null;
 
 const WORKTABLES: { id: Worktable; icon: ReactNode }[] = [
   { id: "quilt", icon: <QuiltIcon /> },
@@ -42,6 +45,8 @@ function Workspace() {
   const dialogs = useDialogs();
   const current = useSession();
   const blockDoc = useBlockEditor();
+  const imageDoc = useImageEditor();
+  const [imageRequests, setImageRequests] = useState<ImageRequests>({ importImage: 0, editPhoto: null });
   const [worktable, setWorktable] = useState<Worktable>("quilt");
   const [ribbonTab, setRibbonTab] = useState<Record<Worktable, number>>({ quilt: 0, block: 0, image: 0 });
   const [theme, setTheme] = useTheme();
@@ -135,6 +140,7 @@ function Workspace() {
         case "save-copy":
           return void a.saveCopy();
         case "add-to-sketchbook": {
+          if (worktableRef.current === "image") return notify(fr.messages.imageAdd);
           if (worktableRef.current !== "block") return notify(fr.messages.nothingToAdd);
           const result = addCurrentBlock();
           const report = cleanupReport(result.cleanup, prefsRef.current.unit);
@@ -147,7 +153,16 @@ function Workspace() {
         case "show-sketchbook":
           return setModal({ kind: "sketchbook" });
         case "show-block-library":
-          return setModal({ kind: "library" });
+          return setModal({ kind: "library", library: "blocks" });
+        case "show-fabric-library":
+          return setModal({ kind: "library", library: "fabrics" });
+        case "show-thread-library":
+          return setModal({ kind: "library", library: "threads" });
+        case "import-image":
+          setModal(null);
+          setWorktable("image");
+          setRibbonTab((prev) => ({ ...prev, image: 0 }));
+          return setImageRequests((r) => ({ ...r, importImage: r.importImage + 1 }));
         case "preferences":
           return setModal({ kind: "prefs" });
         case "save-default-palette":
@@ -161,8 +176,9 @@ function Workspace() {
           if (plainField) {
             document.execCommand(command);
           } else {
-            // Dans le plan Bloc, l'historique est celui du dessin en cours (sauf si le carnet est ouvert).
-            const target = worktableRef.current === "block" && !modalRef.current ? blockEditor : session;
+            // Dans les plans Bloc et Image, l'historique est celui du dessin ou de l'image en cours (sauf si une
+            // fenêtre comme le carnet est ouverte).
+            const target = modalRef.current ? session : worktableRef.current === "block" ? blockEditor : worktableRef.current === "image" ? imageEditor : session;
             if (command === "undo") target.undo();
             else target.redo();
           }
@@ -197,7 +213,7 @@ function Workspace() {
     [notify],
   );
 
-  const history = worktable === "block" && !modal ? blockDoc : current;
+  const history = modal ? current : worktable === "block" ? blockDoc : worktable === "image" ? imageDoc : current;
   const tabs = fr.ribbon[worktable];
   const activeTab = ribbonTab[worktable];
   const name = currentProjectName();
@@ -250,8 +266,14 @@ function Workspace() {
           <button type="button" className="btn btn--small" data-testid="tool-add" onClick={() => runCommand("add-to-sketchbook")}>
             {fr.project.addToSketchbook}
           </button>
-          <button type="button" className="btn btn--small" data-testid="tool-library" title={fr.library.openTitle} onClick={() => setModal({ kind: "library" })}>
+          <button type="button" className="btn btn--small" data-testid="tool-library" title={fr.library.openTitle} onClick={() => setModal({ kind: "library", library: "blocks" })}>
             {fr.library.open}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-fabric-library" title={fr.library.openFabricsTitle} onClick={() => setModal({ kind: "library", library: "fabrics" })}>
+            {fr.library.openFabrics}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-thread-library" title={fr.library.openThreadsTitle} onClick={() => setModal({ kind: "library", library: "threads" })}>
+            {fr.library.openThreads}
           </button>
         </div>
 
@@ -297,6 +319,8 @@ function Workspace() {
             unit={prefs.unit}
             notify={notify}
           />
+        ) : worktable === "image" && activeTab === 0 ? (
+          <ImageWorkspace unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} requests={imageRequests} />
         ) : (
           <>
             <aside className="palette" aria-label={fr.palette.title}>
@@ -350,10 +374,18 @@ function Workspace() {
             setWorktable("block");
             setRibbonTab((prev) => ({ ...prev, block: coloringIndex > 0 ? 2 : 1 }));
           }}
+          onEditPhoto={(id) => {
+            setModal(null);
+            setWorktable("image");
+            setRibbonTab((prev) => ({ ...prev, image: 0 }));
+            setImageRequests((r) => ({ ...r, editPhoto: { id, at: Date.now() } }));
+          }}
           onClose={() => setModal(null)}
         />
       )}
-      {modal?.kind === "library" && <BlockLibrary unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} onClose={() => setModal(null)} />}
+      {modal?.kind === "library" && (
+        <Library key={modal.library} kind={modal.library} unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} onClose={() => setModal(null)} />
+      )}
       {modal?.kind === "prefs" && (
         <Preferences
           prefs={prefs}

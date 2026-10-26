@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { BlockItem, Paint } from "../../core/project/model";
+import type { BlockItem } from "../../core/project/model";
 import { fr } from "../i18n/fr";
-import { BlockSvg } from "./Thumb";
+import { BlockSvg, type FillOf } from "./Thumb";
 
 interface Props {
   /** Le bloc dont on parcourt la pile ; `null` si le dessin n'est pas encore dans le carnet. */
@@ -9,11 +9,11 @@ interface Props {
   /** Coloration affichée : 1 à n, ou 0 pour le dessin au trait. */
   index: number;
   onChoose: (index: number) => void;
-  colorOf?: (paint: Paint) => string;
+  fillOf?: FillOf;
 }
 
 /** Les flèches de coloration (début, précédente, suivante, dernière), l'indicateur « 2 sur 5 » et « Choisir une coloration ». */
-export function ColoringNav({ block, index, onChoose, colorOf }: Props) {
+export function ColoringNav({ block, index, onChoose, fillOf }: Props) {
   const [choosing, setChoosing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const n = block?.colorings.length ?? 0;
@@ -83,7 +83,7 @@ export function ColoringNav({ block, index, onChoose, colorOf }: Props) {
                 }}
               >
                 <span className="thumb thumb--block">
-                  <BlockSvg block={block} coloringIndex={i} {...(colorOf ? { colorOf } : {})} />
+                  <BlockSvg block={block} coloringIndex={i} {...(fillOf ? { fillOf } : {})} />
                 </span>
                 <span>{i === 0 ? "0" : String(i)}</span>
               </button>

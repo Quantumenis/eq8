@@ -10,7 +10,6 @@ import {
   splitColorings,
   updateCard,
 } from "../../core/project/commands";
-import { displayColor } from "../../core/draw/coloring";
 import {
   SECTION_IDS,
   isBlockList,
@@ -31,7 +30,12 @@ import { ColoringNav } from "./ColoringNav";
 import { useDialogs } from "./Dialogs";
 import { Modal } from "./Modal";
 import { SortDialog } from "./SortDialog";
-import { Thumb } from "./Thumb";
+import { Thumb, type FillOf } from "./Thumb";
+import { useColorTools } from "./ColorTools";
+import { fabricToPhoto, photoToFabric } from "../../core/project/images";
+import { averageColor } from "../../core/image/raster";
+import { decodeImage } from "../imageEditor";
+import { pieceFill } from "../paintView";
 
 type ThumbSize = "tiny" | "small" | "medium" | "large";
 const THUMB_PX: Record<ThumbSize, number> = { tiny: 40, small: 64, medium: 96, large: 144 };
@@ -55,13 +59,16 @@ interface Props {
   onAdded: () => Promise<void>;
   /** « Modifier » un bloc du carnet : ouvre son dessin (et la coloration affichée) dans le plan Bloc. */
   onEditBlock: (id: Id, coloringIndex: number) => void;
+  /** « Modifier » une photo : elle est posée sur le plan Image. */
+  onEditPhoto: (id: Id) => void;
   onClose: () => void;
 }
 
-export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Props) {
+export function Sketchbook({ unit, notify, onAdded, onEditBlock, onEditPhoto, onClose }: Props) {
   const session = useSession();
   const dialogs = useDialogs();
   const project = session.project;
+  const colorTools = useColorTools(notify);
 
   const [section, setSection] = useState<SectionId>("colors");
   const [blockTab, setBlockTab] = useState<BlockListKey>("blocks");
@@ -93,7 +100,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
   }, [thumbSize]);
 
   const select = (id: Id | undefined) => setSelection((s) => ({ ...s, [list]: id }));
-  const colorOf = (paint: Parameters<typeof displayColor>[1]) => displayColor(project, paint) ?? "#9e9e9e";
+  const fillOf: FillOf = (paint) => pieceFill(project, session.assets, paint) ?? { color: "#9e9e9e" };
   const coloringIndex = (block: BlockItem) => Math.min(coloringOf[block.id] ?? (block.colorings.length > 0 ? 1 : 0), block.colorings.length);
   const selectedBlock = selected && isBlockList(list) && "colorings" in selected ? selected : null;
 
@@ -116,6 +123,42 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
     }
   }
   const nameOf = (item: AnyItem) => item.card.name || fr.sketchbook.unnamed;
+
+  /** « Copier vers Photos » (un tissu) ou « Copier vers Tissus » (une photo) : la même image, dans l'autre section. */
+  async function copyAcross() {
+    if (!selected) return;
+    if (list === "fabrics") {
+      let r: ReturnType<typeof fabricToPhoto> | null = null;
+      session.execute(fr.sketchbook.copyToPhotos, (p) => {
+        r = fabricToPhoto(p, session.assets, selected.id);
+        return r.project;
+      });
+      const result = r as ReturnType<typeof fabricToPhoto> | null;
+      notify(result?.duplicate ? fr.sketchbook.alreadyThere(fr.itemSingular.photos) : fr.sketchbook.copiedTo(fr.sections.photos));
+      if (result && !result.duplicate) void onAdded();
+      return;
+    }
+    if (list === "photos" && "asset" in selected) {
+      const bytes = session.assets.get(selected.asset);
+      if (!bytes) return;
+      let average = "#9e9e9e";
+      try {
+        average = averageColor((await decodeImage(bytes)).raster).hex;
+      } catch {
+        // Image illisible : la couleur moyenne reste grise.
+      }
+      let r: ReturnType<typeof photoToFabric> | null = null;
+      session.execute(fr.sketchbook.copyToFabrics, (p) => {
+        r = photoToFabric(p, selected.id, average);
+        return r.project;
+      });
+      const result = r as ReturnType<typeof photoToFabric> | null;
+      notify(result?.duplicate ? fr.sketchbook.alreadyThere(fr.itemSingular.fabrics) : fr.sketchbook.copiedTo(fr.sections.fabrics));
+      if (result && !result.duplicate) void onAdded();
+    }
+  }
+
+  const canEdit = (list === "blocks" || list === "photos") && selected !== null;
 
   async function remove() {
     if (!selected) return;
@@ -272,16 +315,27 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
               <button type="button" className="btn" data-testid="add-color" onClick={addColor}>
                 {fr.sketchbook.addColor}
               </button>
+              <button type="button" className="btn" data-testid="add-colors" title={fr.sketchbook.addColorsTitle} onClick={() => colorTools.openPicker(newColor)}>
+                {fr.colors.menu.add}
+              </button>
             </div>
+          )}
+          {(list === "fabrics" || list === "photos") && (
+            <button type="button" className="btn" data-testid="copy-across" disabled={!selected} onClick={() => void copyAcross()}>
+              {list === "fabrics" ? fr.sketchbook.copyToPhotos : fr.sketchbook.copyToFabrics}
+            </button>
           )}
           <span className="modal-footer-spacer" />
           <button
             type="button"
             className="btn"
             data-testid="edit-item"
-            disabled={!(list === "blocks" && selected)}
-            title={list === "blocks" ? undefined : fr.sketchbook.editUnavailable}
-            onClick={() => selectedBlock && onEditBlock(selectedBlock.id, coloringIndex(selectedBlock))}
+            disabled={!canEdit}
+            title={list === "blocks" || list === "photos" ? undefined : fr.sketchbook.editUnavailable}
+            onClick={() => {
+              if (selectedBlock) onEditBlock(selectedBlock.id, coloringIndex(selectedBlock));
+              else if (list === "photos" && selected) onEditPhoto(selected.id);
+            }}
           >
             {fr.sketchbook.edit}
           </button>
@@ -349,7 +403,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
 
         {selectedBlock && (
           <div className="sk-coloring-bar" data-testid="sketchbook-coloring">
-            <ColoringNav block={selectedBlock} index={coloringIndex(selectedBlock)} onChoose={(i) => setColoringOf((c) => ({ ...c, [selectedBlock.id]: i }))} colorOf={colorOf} />
+            <ColoringNav block={selectedBlock} index={coloringIndex(selectedBlock)} onChoose={(i) => setColoringOf((c) => ({ ...c, [selectedBlock.id]: i }))} fillOf={fillOf} />
             <button type="button" className="btn btn--small" data-testid="split-colorings" title={fr.coloring.nav.splitTitle} disabled={coloringIndex(selectedBlock) < 2} onClick={split}>
               {fr.coloring.nav.split}
             </button>
@@ -379,6 +433,11 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
                 draggable
                 tabIndex={item.id === selectedId || (!selectedId && item === items[0]) ? 0 : -1}
                 onClick={() => select(item.id)}
+                onContextMenu={(e) => {
+                  if (list !== "colors" || !("rgb" in item)) return;
+                  select(item.id);
+                  colorTools.openMenu(item.rgb, e);
+                }}
                 onDragStart={(e) => onDragStart(e, item.id)}
                 onDragOver={(e) => onDragOver(e, item.id)}
                 onDragLeave={() => setOverId(null)}
@@ -388,7 +447,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
                   setOverId(null);
                 }}
               >
-                <Thumb list={list} item={item} size={px} colorOf={colorOf} {...("colorings" in item ? { coloringIndex: coloringIndex(item) } : {})} />
+                <Thumb list={list} item={item} size={px} fillOf={fillOf} {...("colorings" in item ? { coloringIndex: coloringIndex(item) } : {})} />
                 {thumbSize !== "tiny" && <span className="sk-item-name">{nameOf(item)}</span>}
               </button>
             ))}
@@ -414,6 +473,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
         </div>
       </div>
 
+      {colorTools.element}
       {sorting && (
         <SortDialog
           list={list}

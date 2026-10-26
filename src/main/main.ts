@@ -12,6 +12,7 @@ import {
   type ThemeMode,
 } from "../shared/api.js";
 import { handle } from "./ipc.js";
+import { registerLibraryIpc } from "./library.js";
 import { registerProjectIpc } from "./projects.js";
 import {
   DEFAULT_PREFERENCES,
@@ -118,6 +119,8 @@ async function buildMenu(): Promise<void> {
         command("Enregistrer sous…", "save-as", "CmdOrCtrl+Shift+S"),
         command("Créer une copie du projet…", "save-copy"),
         { type: "separator" },
+        command("Importer une image…", "import-image", "CmdOrCtrl+I"),
+        { type: "separator" },
         command("Ajouter au carnet", "add-to-sketchbook", "CmdOrCtrl+Shift+A"),
         command("Afficher le carnet", "show-sketchbook", "CmdOrCtrl+B"),
         { type: "separator" },
@@ -163,7 +166,11 @@ async function buildMenu(): Promise<void> {
     },
     {
       label: "&Bibliothèques",
-      submenu: [command("Blocs…", "show-block-library", "CmdOrCtrl+L")],
+      submenu: [
+        command("Blocs…", "show-block-library", "CmdOrCtrl+L"),
+        command("Tissus…", "show-fabric-library", "CmdOrCtrl+Shift+F"),
+        command("Fils…", "show-thread-library", "CmdOrCtrl+Shift+T"),
+      ],
     },
     {
       label: "&Aide",
@@ -231,6 +238,7 @@ function registerIpc(): void {
     mainWindow?.close();
   });
 
+  registerLibraryIpc(() => mainWindow);
   registerProjectIpc({
     getWindow: () => mainWindow,
     onRecentsChanged: () => void buildMenu(),

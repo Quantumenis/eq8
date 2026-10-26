@@ -15,6 +15,12 @@ export function projectsDir(): string {
   return path.join(root, "Quilt Studio", "Projets");
 }
 
+/** Bibliothèques personnelles (« Mes favoris »), séparées des projets (SPEC §8.7). */
+export function favoritesDir(): string {
+  const root = process.env.QUILT_STUDIO_DOCUMENTS_DIR || app.getPath("documents");
+  return path.join(root, "Quilt Studio", "Favoris");
+}
+
 export function applyDataDirOverride(): void {
   const dir = process.env.QUILT_STUDIO_DATA_DIR;
   if (dir) app.setPath("userData", dir);

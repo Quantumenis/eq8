@@ -1,0 +1,353 @@
+/* M4 : tissus, couleurs et fils — outils Fil, sélecteur et gammes de couleurs, plan Image, bibliothèques. */
+
+.palette--image h3 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ---- Outils Fil ---------------------------------------------------------------------------------------------- */
+
+.swatch-grid--threads {
+  grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+  max-height: 120px;
+}
+
+.swatch--thread {
+  height: 24px;
+}
+
+.button-grid--5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.thread-props {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.thread-props .palette-subtitle {
+  width: 100%;
+}
+
+.thread-preview {
+  display: flex;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+/* ---- Menu contextuel ----------------------------------------------------------------------------------------- */
+
+.menu--context {
+  position: fixed;
+  z-index: 60;
+  right: auto;
+  top: auto;
+  min-width: 220px;
+}
+
+/* ---- Sélecteur de couleur ------------------------------------------------------------------------------------ */
+
+.picker {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.picker-visual {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+}
+
+.sv-square {
+  position: relative;
+  width: 220px;
+  height: 180px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background-image: linear-gradient(to top, #000000, transparent), linear-gradient(to right, #ffffff, transparent);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.sv-cursor {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.hue-slider {
+  width: 100%;
+  height: 14px;
+  appearance: none;
+  border-radius: 7px;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+.hue-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  background: transparent;
+}
+
+.picker-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.picker-preview {
+  height: 48px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.picker-preview--small {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+
+.picker-group {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.picker-group legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.field--tiny .field-input {
+  width: 64px;
+}
+
+.picker-added-strip,
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.swatch--small {
+  width: 22px;
+  height: 22px;
+}
+
+.swatch--inline {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+}
+
+/* ---- Gammes ------------------------------------------------------------------------------------------------- */
+
+.ramp-controls {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+
+.ramp-second {
+  flex: 1;
+  min-width: 240px;
+}
+
+.ramp-second .swatch-row {
+  max-height: 84px;
+  overflow: auto;
+  margin-top: 4px;
+}
+
+.ramp-strip {
+  display: flex;
+  gap: 3px;
+}
+
+.ramp-swatch {
+  flex: 1;
+  height: 64px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+
+.ramp-swatch--selected {
+  outline: 3px solid var(--text);
+  outline-offset: 1px;
+}
+
+.radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 12px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.radio-group legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---- Plan Image --------------------------------------------------------------------------------------------- */
+
+.worktable--image-edit {
+  display: flex;
+  flex-direction: column;
+  place-items: initial;
+  padding: 0;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.image-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.image-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  touch-action: none;
+}
+
+.image-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  color: var(--text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+
+.image-empty p {
+  max-width: 460px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Bibliothèques ------------------------------------------------------------------------------------------ */
+
+.lib-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lib-main .lib-grid {
+  flex: 1;
+}
+
+.lib-option {
+  padding: 4px 8px;
+}
+
+.lib-tree-section--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.lib-tree-label--static {
+  flex: 1;
+  cursor: default;
+}
+
+.lib-tree-note {
+  margin: 4px 8px;
+  font-size: 12px;
+}
+
+.lib-tree-row .btn--tiny {
+  padding: 0 5px;
+}
+
+.thumb--fabric {
+  position: relative;
+}
+
+.average-corner {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.thumb--photo {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.thumb--photo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.search-color-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.search-color-row .swatch-row {
+  margin-top: 0;
+  max-height: 96px;
+  overflow: auto;
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { displayColor, findPaletteEntry, paintPieces, paletteEntries, samePaint, similarPieces } from "../../core/draw/coloring";
+import { FUSSY_BIG_STEP, FUSSY_STEP, findPaletteEntry, fussyCut, paintPieces, paletteEntries, samePaint, similarPieces } from "../../core/draw/coloring";
 import {
   clearGuides,
   convertToGuides,
@@ -9,8 +9,11 @@ import {
   setGraphPaper,
   setSnapCounts,
   setSnapOption,
+  setThreads,
   type BlockDraft,
 } from "../../core/draw/draft";
+import type { Pt } from "../../core/draw/geometry";
+import { DEFAULT_THREAD, applyThread, sectionAt, sectionsOf } from "../../core/draw/threads";
 import { addNodesAt, addNodesAtIntersections, MAX_PARTS, partitionParams, staggerParams } from "../../core/draw/nodes";
 import { analyzeBlock, type Piece } from "../../core/draw/pieces";
 import { transformSelection, type MirrorAxis, type TransformSpec } from "../../core/draw/transform";
@@ -21,10 +24,14 @@ import { blockEditor, useBlockEditor } from "../blockEditor";
 import { fr } from "../i18n/fr";
 import { paintStore } from "../paintStore";
 import { useSession } from "../projectSession";
+import { useFabricTiles } from "../fabricTiles";
+import { pieceFill } from "../paintView";
 import { BlockCanvas, type ColoringLayer, type NodeMode, type Tool } from "./BlockCanvas";
 import { ColoringNav } from "./ColoringNav";
-import { ColoringPalette, type ColorTool } from "./ColoringPalette";
+import { ColoringPalette, isThreadTool, type ColorTool } from "./ColoringPalette";
+import { useColorTools } from "./ColorTools";
 import { useDialogs } from "./Dialogs";
+import { Check, NumberField } from "./fields";
 
 interface Props {
   /** Onglet du ruban : 0 NOUVEAU BLOC, 1 DESSIN, 2 COLORATION, 3 IMPRIMER & EXPORTER. */
@@ -35,80 +42,6 @@ interface Props {
 }
 
 const TOOLS: Tool[] = ["pick", "edit", "line", "arc", "grid"];
-
-/** Champ numérique : valide à Entrée ou en quittant le champ ; une valeur refusée rétablit l'ancienne. */
-function NumberField({
-  label,
-  value,
-  onCommit,
-  testId,
-  decimals = 2,
-  invalid = false,
-  title,
-}: {
-  label: string;
-  value: number;
-  onCommit: (value: number) => boolean | void;
-  testId: string;
-  decimals?: number;
-  invalid?: boolean;
-  title?: string;
-}) {
-  const format = (v: number) => String(Math.round(v * 10 ** decimals) / 10 ** decimals).replace(".", ",");
-  const [text, setText] = useState(format(value));
-  const [focused, setFocused] = useState(false);
-  const [bad, setBad] = useState(false);
-  useEffect(() => {
-    if (!focused) setText(format(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, focused]);
-
-  const commit = () => {
-    const parsed = Number(text.trim().replace(",", "."));
-    if (text.trim() === "" || !Number.isFinite(parsed)) {
-      setBad(true);
-      setText(format(value));
-      return;
-    }
-    const ok = onCommit(parsed);
-    setBad(ok === false);
-    if (ok === false) setText(format(value));
-  };
-
-  return (
-    <label className={`field${bad || invalid ? " field--invalid" : ""}`} title={title}>
-      <span className="field-label">{label}</span>
-      <input
-        className="field-input"
-        inputMode="decimal"
-        value={text}
-        data-testid={testId}
-        aria-invalid={bad || invalid}
-        onFocus={() => setFocused(true)}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          setFocused(false);
-          commit();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          }
-        }}
-      />
-    </label>
-  );
-}
-
-function Check({ label, checked, onChange, testId }: { label: string; checked: boolean; onChange: (v: boolean) => void; testId: string }) {
-  return (
-    <label className="check">
-      <input type="checkbox" checked={checked} data-testid={testId} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
-  );
-}
 
 export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   const editor = useBlockEditor();
@@ -129,6 +62,12 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   const [colorTool, setColorToolState] = useState<ColorTool>("brush");
   const lastPaintTool = useRef<ColorTool>("brush");
   const [sprayKeys, setSprayKeys] = useState<readonly string[]>([]);
+  /** Pièce dont on règle la coupe ciblée (glisser, puis flèches). */
+  const [fussyKey, setFussyKey] = useState<string | null>(null);
+  const fussyDrag = useRef<{ key: string; last: Pt; id: number } | null>(null);
+  const fussyCount = useRef(0);
+  const colorTools = useColorTools(notify);
+  useFabricTiles();
 
   // ---- Onglet COLORATION -------------------------------------------------------------------------------------
 
@@ -146,11 +85,13 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
     [tab, draft.width, draft.height, draft.segments],
   );
   const pieceKeys = useMemo(() => new Set(pieces.map((p) => p.key)), [pieces]);
+  const sections = useMemo(() => sectionsOf(pieces), [pieces]);
   const liveSpray = useMemo(() => sprayKeys.filter((k) => pieceKeys.has(k)), [sprayKeys, pieceKeys]);
 
   const setColorTool = (next: ColorTool) => {
     if (next !== "eyedropper") lastPaintTool.current = next;
     setSprayKeys([]); // changer d'outil désélectionne
+    if (next !== "fussy") setFussyKey(null);
     setColorToolState(next);
   };
 
@@ -219,14 +160,73 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, colorTool, liveSpray, project, tryPaint]);
 
+  // Coupe ciblée : les flèches décalent le tissu de 1/16 po, Ctrl+flèches de 1/2 po (Q-5.1).
+  useEffect(() => {
+    if (tab !== 2 || colorTool !== "fussy" || !fussyKey) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      const step = e.ctrlKey || e.metaKey ? FUSSY_BIG_STEP : FUSSY_STEP;
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      editor.execute(fr.coloring.history.fussy, (dr) => setFills(dr, fussyCut(dr.fills, fussyKey, d[0] as number, d[1] as number)), `fussy-keys:${fussyKey}`);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, colorTool, fussyKey, editor]);
+
+  const onPress: ColoringLayer["onPress"] = ({ piece, point, tolerance }) => {
+    if (isThreadTool(colorTool)) {
+      const { thread, threadProps } = paintStore.get();
+      const keys = colorTool === "threadSpray" ? (piece || sectionAt(sections, point, tolerance) ? sections.map((s) => s.key) : []) : [sectionAt(sections, point, tolerance)?.key].filter((k): k is string => !!k);
+      if (keys.length === 0) return false;
+      editor.execute(colorTool === "threadSpray" ? fr.coloring.history.threadSpray : fr.coloring.history.thread, (d) => setThreads(d, applyThread(d.threads, keys, thread, threadProps)));
+      return false;
+    }
+    if (colorTool === "fussy") {
+      if (!piece) {
+        setFussyKey(null);
+        return false;
+      }
+      if (editor.draft.fills[piece.key]?.kind !== "fabric") {
+        setFussyKey(null);
+        notify(fr.coloring.fussyNeedFabric);
+        return false;
+      }
+      setFussyKey(piece.key);
+      fussyCount.current += 1;
+      fussyDrag.current = { key: piece.key, last: point, id: fussyCount.current };
+      return true;
+    }
+    onPiece(piece);
+    return false;
+  };
+
   const coloringLayer: ColoringLayer | undefined =
     tab === 2
       ? {
           pieces,
-          colorOf: (key) => displayColor(project, draft.fills[key]),
+          fillOf: (key) => pieceFill(project, current.assets, draft.fills[key]),
+          sections,
+          threadOf: (key) => draft.threads[key] ?? DEFAULT_THREAD,
           highlight: new Set(liveSpray),
-          onPiece,
-          cursor: colorTool === "eyedropper" ? "copy" : "pointer",
+          focus: colorTool === "fussy" ? fussyKey : null,
+          onPress,
+          onDrag: (point) => {
+            const g = fussyDrag.current;
+            if (!g) return;
+            const dx = point.x - g.last.x;
+            const dy = point.y - g.last.y;
+            g.last = point;
+            // Tout le glissement est une seule étape d'annulation.
+            editor.execute(fr.coloring.history.fussy, (d) => setFills(d, fussyCut(d.fills, g.key, dx, dy)), `fussy:${g.id}`);
+          },
+          onRelease: () => {
+            fussyDrag.current = null;
+          },
+          targetsSections: isThreadTool(colorTool),
+          cursor: colorTool === "eyedropper" ? "copy" : colorTool === "fussy" ? "move" : isThreadTool(colorTool) ? "crosshair" : "pointer",
         }
       : undefined;
   const source = tab === 2 ? sourceBlock() : null;
@@ -437,7 +437,10 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
         </>
       )}
 
-      {tab === 2 && <ColoringPalette project={project} tool={colorTool} onTool={setColorTool} selectionCount={liveSpray.length} onPick={tryPaint} />}
+      {tab === 2 && (
+        <ColoringPalette project={project} tool={colorTool} onTool={setColorTool} selectionCount={liveSpray.length} onPick={tryPaint} onColorMenu={colorTools.openMenu} />
+      )}
+      {colorTools.element}
 
       {tab === 3 && <p className="palette-empty">{fr.draw.soon}</p>}
     </aside>
@@ -448,16 +451,26 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
       {palette}
       <main className="worktable worktable--block-edit" data-testid="worktable">
         {tab === 2 ? (
-          <div className="precision-bar coloring-bar" data-testid="coloring-bar">
+          <div className="precision-bar coloring-bar" data-testid="coloring-bar" data-threads={Object.keys(draft.threads).length} data-fussy={fussyKey ?? ""}>
             <ColoringNav
               block={source}
               index={source ? editor.sourceColoring : 0}
               onChoose={(i) => chooseColoring(i)}
-              colorOf={(paint) => displayColor(project, paint) ?? "#9e9e9e"}
+              fillOf={(paint) => pieceFill(project, current.assets, paint) ?? { color: "#9e9e9e" }}
             />
             <span className="precision-title" data-testid="piece-count">
               {fr.coloring.pieces(pieces.length)}
             </span>
+            {colorTool === "fussy" && fussyKey && (
+              <span
+                className="precision-title"
+                data-testid="fussy-offset"
+                data-x={draft.fills[fussyKey]?.kind === "fabric" ? ((draft.fills[fussyKey] as { offset?: Pt }).offset?.x ?? 0) : 0}
+                data-y={draft.fills[fussyKey]?.kind === "fabric" ? ((draft.fills[fussyKey] as { offset?: Pt }).offset?.y ?? 0) : 0}
+              >
+                {fr.coloring.fussyOffset(draft.fills[fussyKey]?.kind === "fabric" ? (draft.fills[fussyKey] as { offset?: Pt }).offset ?? { x: 0, y: 0 } : { x: 0, y: 0 }, unit)}
+              </span>
+            )}
           </div>
         ) : (
         <div className="precision-bar" role="group" aria-label={fr.draw.precision.title} data-testid="precision-bar">

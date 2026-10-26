@@ -4,7 +4,10 @@ import type { BlockDraft } from "../core/draw/draft";
 import { arcOf, type Pt, type Segment } from "../core/draw/geometry";
 import { piecePath, type Piece } from "../core/draw/pieces";
 import type { SnapResult } from "../core/draw/snap";
+import { threadDash, threadWidth, type Section } from "../core/draw/threads";
 import { toScreen, toWorld, type View } from "../core/draw/view";
+import type { ThreadStroke } from "../core/project/model";
+import type { Tile } from "./fabricTiles";
 
 export interface Palette {
   surface: string;
@@ -42,7 +45,23 @@ export interface Scene {
   showNodes: boolean;
   palette: Palette;
   /** Onglet COLORATION : pièces remplies, sans grille ni papier millimétré. */
-  coloring: { pieces: readonly Piece[]; colorOf: (key: string) => string | null; highlight: ReadonlySet<string> } | null;
+  coloring: ColoringScene | null;
+}
+
+/** Ce qui remplit une pièce : une couleur, ou un tissu (sa tuile, son décalage, et sa couleur moyenne en attendant l'image). */
+export type PieceFill = { color: string; tile?: Tile | null; offset?: { x: number; y: number } };
+
+export interface ColoringScene {
+  pieces: readonly Piece[];
+  fillOf: (key: string) => PieceFill | null;
+  /** Coutures (sections des contours des pièces) et leur fil. */
+  sections: readonly Section[];
+  threadOf: (key: string) => ThreadStroke;
+  highlight: ReadonlySet<string>;
+  /** Pièce en cours de coupe ciblée (contour pointillé). */
+  focus: string | null;
+  /** Section sous le pointeur (outils Fil). */
+  hoverSection: string | null;
 }
 
 /** Couleur du contour des pièces choisies par « Sélectionner & vaporiser ». */
@@ -94,10 +113,25 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   if (s.coloring) {
     ctx.save();
     ctx.setTransform(s.dpr * view.scale, 0, 0, s.dpr * view.scale, s.dpr * view.originX, s.dpr * view.originY);
+    const patterns = new Map<CanvasImageSource, CanvasPattern | null>();
     for (const piece of s.coloring.pieces) {
-      const color = s.coloring.colorOf(piece.key);
-      if (!color) continue;
-      ctx.fillStyle = color;
+      const fill = s.coloring.fillOf(piece.key);
+      if (!fill) continue;
+      ctx.fillStyle = fill.color;
+      const image = fill.tile?.image;
+      if (fill.tile && image) {
+        let pattern = patterns.get(image);
+        if (pattern === undefined) {
+          pattern = ctx.createPattern(image, "repeat");
+          patterns.set(image, pattern);
+        }
+        if (pattern) {
+          // Tuile à l'échelle réelle (1 pixel de la tuile = 1/ppp pouce), calée sur le coin du bloc, décalée par la coupe ciblée.
+          const k = 1 / fill.tile.ppi;
+          pattern.setTransform(new DOMMatrix([k, 0, 0, k, fill.offset?.x ?? 0, fill.offset?.y ?? 0]));
+          ctx.fillStyle = pattern;
+        }
+      }
       ctx.fill(piecePath2D(piece));
     }
     ctx.restore();
@@ -151,11 +185,13 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
     ctx.globalAlpha = 1;
   }
 
-  // Contour du bloc.
+  // Contour du bloc (en coloration, il fait partie des coutures).
   const line = s.coloring ? SEAM : palette.line;
-  ctx.strokeStyle = line;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+  if (!s.coloring) {
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+  }
 
   // Repères.
   ctx.save();
@@ -169,14 +205,49 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   }
   ctx.restore();
 
-  // Dessin.
+  // Dessin ; en coloration, les coutures avec leur fil (couleur, style, épaisseur).
   ctx.lineCap = "round";
-  for (const seg of draft.segments) {
-    const selected = s.selection.has(seg.id);
-    ctx.strokeStyle = selected && !s.coloring ? palette.accent : line;
-    ctx.lineWidth = selected && !s.coloring ? 4 : s.coloring ? 1.5 : 2;
-    tracePath(ctx, view, seg);
-    ctx.stroke();
+  if (s.coloring) {
+    ctx.save();
+    for (const section of s.coloring.sections) {
+      const thread = s.coloring.threadOf(section.key);
+      const width = threadWidth(thread.weight);
+      if (section.key === s.coloring.hoverSection) {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = palette.accent;
+        ctx.lineWidth = width + 5;
+        tracePath(ctx, view, section.seg);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = thread.rgb;
+      ctx.lineWidth = width;
+      ctx.setLineDash(threadDash(thread.style, width));
+      tracePath(ctx, view, section.seg);
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else {
+    for (const seg of draft.segments) {
+      const selected = s.selection.has(seg.id);
+      ctx.strokeStyle = selected ? palette.accent : line;
+      ctx.lineWidth = selected ? 4 : 2;
+      tracePath(ctx, view, seg);
+      ctx.stroke();
+    }
+  }
+
+  // Coupe ciblée : la pièce dont on déplace le tissu.
+  if (s.coloring?.focus) {
+    const piece = s.coloring.pieces.find((p) => p.key === s.coloring?.focus);
+    if (piece) {
+      ctx.save();
+      ctx.setTransform(s.dpr * view.scale, 0, 0, s.dpr * view.scale, s.dpr * view.originX, s.dpr * view.originY);
+      ctx.strokeStyle = palette.accent;
+      ctx.lineWidth = 2.5 / view.scale;
+      ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+      ctx.stroke(piecePath2D(piece));
+      ctx.restore();
+    }
   }
 
   // Sélectionner & vaporiser : les pièces semblables entourées en vert.

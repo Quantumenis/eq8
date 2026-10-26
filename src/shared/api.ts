@@ -45,6 +45,19 @@ export interface RecoveryInfo {
 
 export type CloseAnswer = "save" | "discard" | "cancel";
 
+/** Une image choisie dans la boîte « Importer » (octets bruts ; `null` si elle n'a pas pu être lue). */
+export interface ImportedImage {
+  name: string;
+  bytes: Uint8Array | null;
+  error: "too-large" | "io" | null;
+}
+
+export type FavoriteKindId = "blocks" | "fabrics" | "threads";
+
+export interface FavoriteListing {
+  name: string;
+}
+
 export interface DocumentState {
   name: string;
   modified: boolean;
@@ -60,6 +73,9 @@ export type MenuCommand =
   | "add-to-sketchbook"
   | "show-sketchbook"
   | "show-block-library"
+  | "show-fabric-library"
+  | "show-thread-library"
+  | "import-image"
   | "undo"
   | "redo"
   | "preferences"
@@ -100,6 +116,15 @@ export interface QuiltStudioApi {
   readRecovery(): Promise<Uint8Array | null>;
   discardRecovery(): Promise<void>;
 
+  /** Boîte « Importer » (JPG, PNG) ; `multiple` permet d'en choisir plusieurs. `null` si l'utilisateur annule. */
+  importImages(multiple: boolean): Promise<ImportedImage[] | null>;
+  /** « Mes favoris » : bibliothèques personnelles, par type. */
+  listFavorites(kind: FavoriteKindId): Promise<FavoriteListing[]>;
+  readFavorite(kind: FavoriteKindId, name: string): Promise<Uint8Array | null>;
+  /** Avec `create`, refuse d'écraser une bibliothèque existante (erreur « exists »). */
+  writeFavorite(kind: FavoriteKindId, name: string, bytes: Uint8Array, create: boolean): Promise<SaveResult>;
+  deleteFavorite(kind: FavoriteKindId, name: string): Promise<boolean>;
+
   getDefaultPalette(): Promise<Uint8Array | null>;
   saveDefaultPalette(bytes: Uint8Array): Promise<void>;
 
@@ -130,6 +155,11 @@ export const IPC = {
   checkRecovery: "recovery:check",
   readRecovery: "recovery:read",
   discardRecovery: "recovery:discard",
+  importImages: "library:import-images",
+  listFavorites: "favorites:list",
+  readFavorite: "favorites:read",
+  writeFavorite: "favorites:write",
+  deleteFavorite: "favorites:delete",
   getDefaultPalette: "palette:get",
   saveDefaultPalette: "palette:save",
   menuCommand: "menu:command",

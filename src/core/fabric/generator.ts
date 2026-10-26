@@ -244,7 +244,7 @@ function noise(p: Params, seed: number): Pattern {
       return mix(base, accent, t);
     },
     samples: 1,
-    maxPpi: 48,
+    maxPpi: 32,
   };
 }
 

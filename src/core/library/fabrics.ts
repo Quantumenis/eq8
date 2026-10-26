@@ -5,6 +5,7 @@ import { hexToOklab, oklabToHex } from "../color/color";
 import { generatedAverage } from "../fabric/generator";
 import { createId, emptyNotecard, type FabricItem, type FabricSource, type JsonValue } from "../project/model";
 import { LIBRARY_NAME } from "./blocks";
+import { FABRIC_AVERAGES } from "./fabricAverages";
 
 export interface LibraryFabricDef {
   /** Identifiant stable dans la bibliothèque (pas dans le projet). */
@@ -182,9 +183,9 @@ export function fabricLibraryTree(): { category: string; styles: { style: string
 
 const averages = new Map<string, string>();
 
-/** Couleur moyenne d'un tissu de la bibliothèque (calculée une fois). */
+/** Couleur moyenne d'un tissu de la bibliothèque : précalculée (fabricAverages.ts), sinon calculée une fois. */
 export function libraryFabricAverage(def: LibraryFabricDef): string {
-  let avg = averages.get(def.id);
+  let avg = FABRIC_AVERAGES[def.id] ?? averages.get(def.id);
   if (!avg) {
     avg = generatedAverage(def.source);
     averages.set(def.id, avg);

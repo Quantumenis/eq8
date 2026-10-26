@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M4 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
+> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M5 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -11,9 +11,10 @@
 | M0 — Squelette, empaquetage, outillage | ✅ terminé | 2026-10-25 |
 | M1 — Projets, carnet, annuler/rétablir, unités | ✅ terminé | 2026-10-26 |
 | M2 — Éditeur de blocs EasyDraw (dessin) | ✅ terminé | 2026-10-26 |
-| **M3 — Détection des pièces, coloration, bibliothèque de blocs** | ✅ terminé | 2026-10-26 |
-| M4 — Tissus, couleurs et fils | ⏭️ prochain | — |
-| M5 … M9 | à faire | — |
+| M3 — Détection des pièces, coloration, bibliothèque de blocs | ✅ terminé | 2026-10-26 |
+| **M4 — Tissus, couleurs et fils** | ✅ terminé | 2026-10-26 |
+| M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ⏭️ prochain | — |
+| M6 … M9 | à faire | — |
 
 ## M1 — fait
 
@@ -159,9 +160,59 @@
 - Pas d'avertissement visuel « pièce non fermée » pendant le dessin (le nettoyage prévient au passage à COLORATION).
 - La bibliothèque et le carnet montrent la coloration 1 (grise) par défaut ; les flèches montrent la 2.
 
-## Reste à faire — M4 (voir PLAN.md)
+## M4 — fait
 
-Générateur de tissus avec graine (~150 tissus, couleur moyenne précalculée), rendu à l'échelle réelle découpé à la pièce (remplacer `displayColor` par un motif dans `blockDraw.ts` et `Thumb.tsx`), coupe ciblée, import JPG/PNG et plan Image v1, sélecteur de couleurs et gammes OKLab, fils (bibliothèque + outils Fil), recherche par couleur, Mes favoris. La palette « Tissus & Couleurs » (`ColoringPalette.tsx`, `paintStore.ts`) et les habillages `{ kind: "fabric" }` sont déjà en place.
+**Cœur (TypeScript pur)**
+- `color/color.ts` : hexadécimal, RVB ↔ TSV ↔ TSL, **OKLab** (aller et retour, retour dans l'écran à luminosité constante), distances RVB (Q-5.6) et perçue (OKLab × 100) ; gammes **Nuances & teintes**, **Tons**, **Dégradés** (4 à 16 couleurs, 8 au départ, extrémités exactes, Q-5.4), **Insérer** ; **tri automatique** par teinte, luminosité ou saturation, croissant ou décroissant, les gris à part (Q-5.3).
+- `fabric/generator.ts` : **générateur de tissus** déterministe (graine mulberry32) : uni, rayures (verticales, horizontales, diagonales), pois (en quinconce ou non), damier, vichy, écossais (sergé), marbré (bruit périodique sans couture), ombré (aller-retour OKLab). Une tuile à l'**échelle réelle** (taille en pouces, rendue à 96 ppp, moins pour les motifs doux), suréchantillonnée ; paramètres lus prudemment (ils viennent d'un fichier).
+- `library/fabrics.ts` : **150 tissus** (4 catégories, 8 styles), noms français ; `fabricAverages.ts` : **couleurs moyennes précalculées** (vérifiées par un test). `library/threads.ts` : **168 fils** (coton, polyester ; 7 familles × 4 teintes × 3 intensités), numéro « QS nnnn » dans la Référence. `library/search.ts` : recherche **par couleur** (les N plus proches) et **par texte** (sans casse ni accents, Q-8.2).
+- `image/` : `raster.ts` (RVBA, couleur moyenne, empreinte), `png.ts` (**encodeur** PNG avec pHYs, **décodeur** des PNG non entrelacés), `info.ts` (type, taille et **ppp** : PNG pHYs, JPEG JFIF puis EXIF ; **75 ppp** à défaut, Q-7.1), `ops.ts` (recadrer, retourner, quarts de tour exacts, rotation libre avec fond et « recadrer après rotation », incliner ±45°, redimensionner normal / bilinéaire / bicubique, **redresser**, échelle par largeur entière ou **par mesure d'une zone** (Q-7.2), préréglages de recadrage Q-7.4), `editor.ts` (session du plan Image, historique borné à 30 pas).
+- Modèle : `Paint` tissu + **`offset`** (coupe ciblée), `Coloring.threads` (**fil par section** : couleur, style continu/tirets/pointillés/point-tiret, épaisseur 1-5, Q-5.2) ; validation stricte de ces champs (facultatifs : le format reste v1). `draw/threads.ts` : sections = arêtes des contours des pièces (contour du bloc compris), **clé de section** géométrique indépendante du sens ; pinceau fil, bombe fil, propriétés cochées. `draw/coloring.ts` : `fussyCut` (pas 1/16 et 1/2 po, Q-5.1).
+- `project/transfer.ts` : copier des éléments d'un carnet à un autre (un bloc emporte ses tissus, un tissu ou une photo son image ; un tissu identique déjà présent est réutilisé). `library/favorites.ts` : **Mes favoris** — un fichier `.qsl` = une archive `.qsp` (le carnet porteur) + `library.json` (type, nom, styles) ; créer (1 à 59 styles), coller (254 par style), supprimer, modifier, relire. `project/images.ts` : tissu ou photo tirés d'une image, Copier vers Tissus / vers Photos (un tissu généré est rendu en PNG), ajout de couleurs (une couleur déjà présente est ignorée). `qsp.ts` accepte des entrées JSON supplémentaires.
+- Un **projet neuf** contient 12 tissus (le premier de chaque style + 4 marbrés).
+
+**Interface**
+- **Rendu des tissus** (`fabricTiles.ts`, `paintView.tsx`) : tuile répétée à l'échelle réelle et découpée à la pièce (Canvas : `createPattern` + `setTransform` ; SVG : `<pattern>`), décalée par la coupe ciblée ; images décodées en asynchrone (la couleur moyenne s'affiche en attendant). Vignettes du carnet, palette, « Récemment utilisés », aperçu et bibliothèques montrent les vraies textures.
+- Onglet COLORATION : outil **Coupe ciblée** (tirer le tissu dans la pièce ; flèches 1/16 po, Ctrl+flèches 1/2 po ; un glissement = une étape d'annulation, les flèches successives aussi), **Pinceau fil** et **Bombe fil** avec le panneau **Propriétés du fil** (fils du carnet, style, épaisseur, cases « le clic change : couleur / style / épaisseur », au moins une cochée) ; la couture visée est mise en évidence. Fils et décalages sont enregistrés avec la coloration (et repris par « Modifier » et par les flèches de coloration).
+- **Plan Image v1** (`ImageWorkspace.tsx`) : Importer une image (Fichier > Importer une image, Ctrl+I ; une à la fois ; une image modifiée est proposée à Photos avant d'être remplacée), Supprimer l'image, **règles** en po ou cm à l'échelle réelle, Taille réelle (1 px = 1 px), Ajuster, Panoramique, Ctrl+molette ; **Échelle du tissu** (largeur entière, flèches par ¼ po) et **Mesurer une zone** ; **Recadrer** (cadre à poignées, partie coupée voilée, X/Y/L/H dans l'unité, préréglages, ✓ Appliquer / ↺ Réinitialiser) ; **Redresser** (tracer une ligne, Appliquer) ; Pivoter ±90° et d'un angle, couleur de fond, « recadrer après rotation » ; Retourner H/V ; Incliner ; Redimensionner (px, po, cm ; proportions ; résolution ; rééchantillonnage) ; **Ajouter comme tissu** et **Enregistrer dans Photos**. Annuler/Rétablir agissent sur l'image quand le plan Image est affiché.
+- **Bibliothèques** de blocs, de **tissus** et de **fils** (`Library.tsx` ; boutons Bibliothèque / Tissus / Fils, menu Bibliothèques, Ctrl+L, Ctrl+Maj+F, Ctrl+Maj+T) : bibliothèque intégrée, **Mes favoris** (+ créer, ✎ modifier nom et styles, 💾 enregistrer, × supprimer ; Copier puis Coller dans un style ; Supprimer des éléments ; **rappel** si l'on quitte une bibliothèque modifiée), Carnet courant, **Résultats de recherche** (par couleur moyenne : élément sélectionné ou couleur du carnet ; bibliothèques à fouiller ; au plus 1-999, 50 par défaut ; « Afficher la couleur moyenne » ; fils aussi par nom ou numéro), **Résultats d'import** (tissus : import d'images **multiples**). Fichiers : `Documents\Quilt Studio\Favoris\{Blocs,Tissus,Fils}\<nom>.qsl`.
+- **Couleurs** : notre **sélecteur** (carré TSV + réglette de teinte, hexadécimal, RVB, TSL, TSV ; plusieurs couleurs d'affilée) ; **clic droit sur une couleur** (carnet ou palette) : Ajouter des couleurs, Nuances & teintes, Tons, Dégradés (seconde couleur prise dans la palette ; Insérer / Retirer ; ajout à la fin), Trier les couleurs > Manuel, Automatique, **Défaire le tri**.
+- Carnet : « Modifier » une **photo** (vers le plan Image), **Copier vers Photos** (tissus), **Copier vers Tissus** (photos), vignettes des photos.
+
+## Vérifications M4 (toutes vertes, 2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **204/204** (14 fichiers, + 1 test de régénération ignoré) — dont 51 nouveaux : **générateur déterministe** (même graine → même image, même empreinte), **damier 50/50 → 127,5 ± 1**, échelle de la tuile (cases de 96 px à 96 ppp), table des moyennes = générateur, 150 tissus / 168 fils ; **échelle** (300 × 150 px à 75 ppp = 4 × 2 po ; 6 po de large → 50 ppp ; mesure 120 px = 2 po → 60 ppp) ; ppp lus (PNG pHYs, JPEG JFIF en dpi et dpcm, simple rapport d'aspect → 75) ; PNG aller-retour exact et déterministe ; **redresser 3° → −3°** (et vers la verticale) ; recadrage, quarts de tour, rotation libre (toile agrandie ou recadrée), inclinaison, réduction (moyenne conservée), préréglages ; **dégradé de 8 pas : extrémités exactes, luminosité OKLab monotone** ; nuances, tons, Insérer, tri automatique ; coupe ciblée et fils (aller-retour du projet, style inconnu refusé, 24 sections d'un Nine Patch) ; Copier vers Tissus/Photos ; transfert d'un bloc avec ses tissus et images ; favoris (créer, coller, relire, supprimer, 254 par style) |
+| `npm run e2e` | **32/32** — M0-M3 (28) + M4 (4) : **PNG damier de 1 po à 96 ppp → Ajouter comme tissu → pièce de 2 po : 2 cases** (échantillonnage du canvas) ; coupe ciblée (glisser, flèches, Ctrl+flèches, annuler/rétablir) ; pinceau fil et bombe fil (24 coutures) ; `.qsp` relu (image, ppp, décalage, fils) ; plan Image (Ctrl+I, échelle, flèches ¼ po, mesure, préréglage refusé, recadrage aux nombres, rotation, annuler, Enregistrer dans Photos, Copier vers Tissus, Modifier une photo, une seule image dans le projet) ; bibliothèque de tissus (ajout, recherche par couleur, couleur moyenne, Mes favoris : créer, copier, coller, enregistrer, supprimer, rappel, relecture) ; fils par numéro ; couleurs (sélecteur, dégradés 8 → 5, Insérer/Retirer, tri automatique, défaire le tri). Captures `m4-image.png`, `m4-coloration-tissu.png`, `m4-bibliotheque-tissus.png`, `m4-degrades.png` ; `m0` à `m3` réenregistrées (boutons Tissus et Fils dans la barre du haut) et vérifiées à l'œil |
+| `npm run dist` | 2 exe (≈ 125 Mo chacun) |
+| `npm run e2e:dist` | 3/3 |
+
+## Décisions prises pendant M4
+
+- **Tissu calé sur le coin du bloc** : la tuile part de (0, 0) du bloc ; la coupe ciblée est un **décalage par pièce** (`Paint.offset`, en pouces, retiré quand il revient à 0). Repeindre une pièce avec le même tissu garde son décalage ; la bombe et la pipette ignorent le décalage. Le glissement est libre (au pixel près), les flèches font 1/16 et 1/2 po.
+- **Fils** : un fil est recopié (couleur, style, épaisseur), comme une couleur unie ; une couture sans fil garde l'aspect foncé par défaut. Une « section » est une arête du dessin planarisé (le dessin est déjà coupé à chaque intersection), contour du bloc compris. Épaisseur d'affichage en pixels d'écran (indépendante du zoom).
+- **Format** : décalage et fils sont des champs **facultatifs** du format v1 (pas de migration) ; une version M3 qui lit un fichier M4 les ignore.
+- **Tissus générés** : rendus à 96 ppp (marbrés 32, ombrés 16 : motifs doux) ; couleurs moyennes **précalculées** dans `fabricAverages.ts`. Régénération, si la bibliothèque ou le générateur change (le test de cohérence le signale) : `QS_REGEN=1 npx vitest run tests/unit/regen-fabric-averages.test.ts`.
+- **Images importées** : on garde les **octets d'origine** (JPG ou PNG) tant que l'image n'a pas été retouchée ; après retouche, un PNG avec sa résolution. Les pixels sont décodés par le navigateur sans gestion de couleur. Le plan Image a son propre historique (30 pas) ; « Ajouter au carnet » y renvoie vers « Ajouter comme tissu » / « Enregistrer dans Photos ».
+- **Échelle** : la valeur saisie est la largeur de l'image entière (Q-7.2) ; « Mesurer une zone » accroche les extrémités au pixel entier.
+- **Couleurs** : la recherche par couleur utilise l'écart OKLab (perçu) ; la tolérance du futur outil Aléatoire gardera la distance RVB (Q-5.6). Une couleur déjà présente dans la palette (même RVB, quel que soit son nom) n'est pas ajoutée de nouveau par le sélecteur ou les gammes. « Défaire le tri » revient à l'ordre d'avant le dernier tri de la session (Ctrl+Z aussi).
+- **Mes favoris** : un style ne contient pas deux fois le même élément (un doublon collé est ignoré) ; supprimer une bibliothèque efface son fichier (avec confirmation) ; renommer = écrire sous le nouveau nom puis effacer l'ancien.
+- **Projet neuf** : 12 tissus par défaut (à rediscuter si vous préférez un carnet vide).
+- `BlockLibrary.tsx` est remplacé par `Library.tsx` (générique) ; `NumberField` et `Check` sont passés dans `components/fields.tsx`.
+
+## Reporté / limites connues (M4)
+
+- La fiche des éléments de Mes favoris n'est pas modifiable dans la bibliothèque ; pas de « Couper » ni de tri dans Mes favoris ; pas de renommage d'un style dans l'interface (la fonction du cœur `renameStyle` existe).
+- Pipettes tissu/couleur « la plus proche » et rotation du tissu : plan Quilt (M5). Les fils ne s'appliquent qu'aux contours des pièces de blocs (pochoirs et broderies : M8-M9).
+- La couleur de fond des rotations se choisit avec la pastille de couleur du système (pas de dialogue TSL) ; pas de BMP, GIF, TIF ni WebP (P2).
+- Une vignette de fil très clair (« Fil blanc clair ») se voit mal sur fond blanc.
+- Après la fermeture du sélecteur de couleurs, Échap ne ferme plus le carnet (le focus est perdu) : cliquer « Fermer ».
+
+## Reste à faire — M5 (voir PLAN.md)
+
+Plan Quilt : dispositions (Horizontal, Sur la pointe, Pointe variable, Bandes, One Patch, Custom Set), pose des blocs, trois calques, Ajuster, Symétrie, coloration au quilt (pinceaux, bombe, échange, pipettes « la plus proche », coupe ciblée, rotation du tissu, Aléatoire). Le rendu des tissus (`fabricTiles.ts`, `pieceFill`) et les colorations par clé de pièce se réutilisent tels quels.
 
 ## Notes pratiques
 

@@ -49,17 +49,19 @@ export function fabricToPhoto(project: Project, assets: AssetStore, fabricId: Id
   return r.status === "added" ? { project: r.project, id: photo.id, duplicate: false } : { project, id: r.existingId, duplicate: true };
 }
 
-/** Ajoute des couleurs à la fin de la palette (gammes, sélecteur) ; les doublons exacts sont ignorés. */
+/** Ajoute des couleurs à la fin de la palette (gammes, sélecteur) ; une couleur déjà présente (même RVB) est ignorée. */
 export function addColors(project: Project, colors: readonly string[]): { project: Project; added: Id[]; duplicates: number } {
   let next = project;
   const added: Id[] = [];
   let duplicates = 0;
   for (const rgb of colors) {
-    const r = addToSketchbook(next, "colors", makeColor(rgb));
-    if (r.status === "added") {
-      next = r.project;
-      added.push(r.item.id);
-    } else duplicates += 1;
+    const color = makeColor(rgb);
+    if (next.sketchbook.colors.some((c) => c.rgb === color.rgb)) {
+      duplicates += 1;
+      continue;
+    }
+    next = addToSketchbook(next, "colors", color).project;
+    added.push(color.id);
   }
   return { project: next, added, duplicates };
 }
