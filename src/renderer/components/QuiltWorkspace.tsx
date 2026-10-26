@@ -82,12 +82,17 @@ import { quiltElement, quiltSource } from "../../core/print/source";
 import { printContext } from "../printSettings";
 import { currentProjectName } from "../projectActions";
 import { PrintPalette } from "./PrintPalette";
+import { TextPanel } from "./TextPanel";
+import { installFontLookup, subscribeFonts } from "../fonts";
+import { DEFAULT_TEXT, type TextSpec } from "../../core/text/glyphs";
+import { textBlockOf } from "../../core/text/registry";
+import { addTextItem, setItemText } from "../../core/quilt/ops";
 import { PrintDialog, type PrintKind, type PrintSubject } from "./PrintDialog";
 import { ExportImageDialog, SelectionDialog, type Picture } from "./ExportDialogs";
 
 type BlockTool = "set" | "eyedropperBlock" | "rotate" | "mirror" | "erase" | "adjust" | "symmetry" | "tape";
 type PaintTool = "brush" | "spray" | "selectSpray" | "swap" | "selectSwap" | "fussy" | "rotateFabric" | "eyedropperFabric" | "eyedropperColor" | "randomize";
-type Tool = BlockTool | PaintTool;
+type Tool = BlockTool | PaintTool | "text";
 
 const BLOCK_TOOLS: BlockTool[] = ["set", "eyedropperBlock", "rotate", "mirror", "erase", "adjust", "symmetry", "tape"];
 const PAINT_TOOLS: PaintTool[] = ["brush", "spray", "selectSpray", "swap", "selectSwap", "fussy", "rotateFabric", "eyedropperFabric", "eyedropperColor", "randomize"];
@@ -110,7 +115,8 @@ type Gesture =
   | { kind: "rotate"; id: Id; start: Pt; base: QuiltDraft }
   | { kind: "skew"; id: Id; handle: Handle; base: QuiltDraft }
   | { kind: "fussy"; piece: ScenePiece; last: Pt; id: number }
-  | { kind: "tape"; a: Pt; b: Pt };
+  | { kind: "tape"; a: Pt; b: Pt }
+  | { kind: "textbox"; a: Pt; b: Pt };
 
 function loadOption<T>(key: string, fallback: T): T {
   try {
@@ -159,6 +165,12 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   const [gestureTick, setGestureTick] = useState(0);
   const [hoverSlot, setHoverSlot] = useState<string | null>(null);
   const [tapeText, setTapeText] = useState("");
+  // Texte en applique : les polices arrivent après coup, la scène est alors recalculée.
+  const [fontTick, setFontTick] = useState(0);
+  useEffect(() => {
+    installFontLookup();
+    return subscribeFonts(() => setFontTick((n) => n + 1));
+  }, []);
   const [options, setOptions] = useState(() => ({
     rulers: loadOption("rulers", false),
     keepRotation: loadOption("keepRotation", false),
@@ -247,7 +259,11 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   }, [gestureTick, draft, options.snapPosition, options.snapSize, options.snapStep]);
 
   const shownDraft = previewDraft ?? draft;
-  const scene: Scene = useMemo(() => buildScene(project, shownDraft), [project, shownDraft]);
+  const selectedText = (() => {
+    const only = liveSelectedIds(shownDraft, selected);
+    return only && only.text ? only : null;
+  })();
+  const scene: Scene = useMemo(() => buildScene(project, shownDraft), [project, shownDraft, fontTick]);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
   const liveSelected = useMemo(() => selected.filter((id) => scene.items.some((i) => i.item.id === id)), [selected, scene]);
@@ -520,6 +536,8 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
           gs.last = info.world;
           const piece = gs.piece;
           execute(fr.quilt.history.fussy, (d) => fussyCutPiece(d, piece, dx, dy), `fussy:${gs.id}`);
+        } else if (gs.kind === "textbox") {
+          gs.b = info.world;
         } else if (gs.kind === "tape") {
           gs.b = info.world;
           setTapeText(fr.quilt.tape(formatLength(Math.hypot(gs.b.x - gs.a.x, gs.b.y - gs.a.y), unit)));
@@ -538,7 +556,24 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
       if (!gs) return;
       gesture.current = null;
       gestureTarget.current = null;
-      if (gs.kind === "stroke") {
+      if (gs.kind === "textbox") {
+        const x = Math.min(gs.a.x, gs.b.x);
+        const y = Math.min(gs.a.y, gs.b.y);
+        const w = Math.max(0.5, Math.abs(gs.b.x - gs.a.x));
+        const h = Math.max(0.5, Math.abs(gs.b.y - gs.a.y));
+        const spec: TextSpec = { ...DEFAULT_TEXT, text: fr.textTool.name, size: Math.max(0.3, Math.min(6, Math.round(h * 0.6 * 4) / 4)) };
+        let id: Id | null = null;
+        execute(fr.textTool.history.add, (d) => {
+          const r = addTextItem(d, { x, y, w, h, spec });
+          id = r.id;
+          return r.draft;
+        });
+        if (id) {
+          setSelected([id]);
+          const tb = textBlockOf(spec);
+          if (tb) execute(fr.textTool.history.edit, (d) => setItemText(d, id as Id, spec, { w: tb.width, h: tb.height }), `text:${id}`);
+        }
+      } else if (gs.kind === "stroke") {
         const samples = sampleStroke(gs.style, gs.points);
         const pieces = piecesTouchedBy(sc, samples, layer);
         applyPaint(fr.quilt.history.stroke, pieces, gs.paint);
@@ -560,6 +595,19 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
       execute(fr.quilt.borders.history.auto, (d) => applyAutoBorder(d, project, id, preset));
       setSelectedBorder(id);
       notify(fr.quilt.borders.auto.applied(preset.name));
+      return;
+    }
+    if (tool === "text") {
+      if (layer !== 2) return notify(fr.textTool.layerOnly);
+      if (info.shift) {
+        gesture.current = { kind: "textbox", a: info.world, b: info.world };
+        gestureTarget.current = info.world;
+        refresh();
+        return;
+      }
+      const hit = itemAtPoint(sceneRef.current, info.world, 2);
+      setSelected(hit?.item.text ? [hit.item.id] : []);
+      if (!hit?.item.text) notify(fr.textTool.help);
       return;
     }
     if (hidden.has(layer) && tool !== "tape") return notify(fr.quilt.messages.layerHidden);
@@ -838,7 +886,7 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
   const paintProps = {
     scene,
     printMark: tab === 4 && printElement && !selectionMode ? printElement.outline : null,
-    marquee: tab === 4 && selectionMode ? marquee : null,
+    marquee: tab === 4 && selectionMode ? marquee : gs?.kind === "textbox" ? { a: gs.a, b: gs.b } : null,
     project,
     assets: current.assets,
     hidden: tab === 3 ? hidden : (new Set<Layer>() as ReadonlySet<Layer>),
@@ -1193,6 +1241,28 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
       {blockPalette}
       <AutoBorders active={autoPreset?.id ?? null} onPick={(p) => setAutoPreset(p)} />
       {adjustPanel}
+      <div className="palette-group" role="group" aria-label={fr.textTool.title}>
+        <h3>{fr.textTool.title}</h3>
+        <div className="tool-grid">
+          <button type="button" className="tool-button" data-testid="qtool-text" aria-pressed={tool === "text"} disabled={layer !== 2} title={layer !== 2 ? fr.textTool.layerOnly : fr.textTool.help} onClick={() => setTool("text")}>
+            {fr.textTool.tool}
+          </button>
+          <button type="button" className="tool-button" data-testid="qtool-text-adjust" aria-pressed={tool === "adjust"} disabled={layer !== 2} onClick={() => setTool("adjust")}>
+            {fr.textTool.adjust}
+          </button>
+        </div>
+        {(tool === "text" || selectedText) && (
+          <TextPanel
+            spec={selectedText?.text ?? null}
+            unit={unit}
+            onChange={(spec) => {
+              if (!selectedText) return;
+              const tb = textBlockOf(spec);
+              execute(fr.textTool.history.edit, (d) => setItemText(d, selectedText.id, spec, tb ? { w: tb.width, h: tb.height } : null), `text:${selectedText.id}`);
+            }}
+          />
+        )}
+      </div>
       <div className="palette-group" role="group" aria-label={fr.quilt.fabricTools}>
         <h3>{fr.quilt.fabricTools}</h3>
         <div className="tool-grid">
@@ -1369,3 +1439,9 @@ export function QuiltWorkspace({ tab, onTab, unit, notify }: Props) {
 
 export { newDraft, defaultLayout, buildLayout, quiltEditor };
 export type { PaletteTab };
+
+/** L'élément libre choisi, s'il n'y en a qu'un. */
+function liveSelectedIds(draft: QuiltDraft, selected: readonly Id[]): FreeItem | null {
+  if (selected.length !== 1) return null;
+  return draft.doc.items.find((i) => i.id === selected[0]) ?? null;
+}

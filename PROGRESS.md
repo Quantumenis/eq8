@@ -16,8 +16,8 @@
 | M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ✅ terminé | 2026-10-26 |
 | **M6 — Bordures** | ✅ terminé | 2026-10-26 |
 | **M7 — Impression et PDF à l'échelle, export, métrage** | ✅ terminé | 2026-10-26 |
-| **M8 — Applique, PolyDraw, blocs combinés, motifs, pochoirs et texte** | 🚧 en cours (cœur fait, interface à finir) | 2026-10-26 |
-| M9 | à faire | — |
+| **M8 — Applique, PolyDraw, blocs combinés, motifs, pochoirs et texte** | ✅ terminé | 2026-10-26 |
+| M9 — Plan Image complet, photos, broderies, finitions, installateur | ⏭️ prochain | — |
 
 ## M1 — fait
 
@@ -337,20 +337,46 @@
 - L'impression réelle par le dialogue de Windows n'est pas testée automatiquement (le même chemin l'est, en PDF) : à essayer une fois sur l'imprimante, avec la page de test.
 - Les blocs déformés (pointe variable) ont leurs arcs aplatis (polylignes à 10⁻⁴ po).
 
-## M8 — état d'avancement (quota épuisé en cours de jalon)
+## M8 — fait
 
-**Fait et testé (Vitest 398/398 au dernier passage complet, typecheck propre) — commit « M8 (étape 1) »**
-- Cœur : `core/draw/bezier.ts` (Béziers → arcs à 1e-4 po), `applique.ts` (formes à nœuds, pièces/fils, auto-intersection, édition des nœuds, couronne), `appliqueShapes.ts` (ellipse/pie/arc+sections, rectangles, 18 formes, StarMaker, PosieMaker, StencilMaker, pinceau, bande, main levée), `polydraw.ts` (6 grilles, PolyLigne/PolyArc, cloner-pivoter, édition), `content.ts` (dessins easydraw/polydraw/applique/combo), `trace.ts`, `core/text/*` (glyphes avec trous, polices, `sfnt`), `core/library/extra.ts` (46 éléments : blocs, motifs, pochoirs).
-- Quilt : texte (`FreeItem.text`, `addTextItem`, `setItemText`), fils des motifs/pochoirs (`scene.strands`), gabarits avec trous, gabarits refusés si auto-intersection.
+**Cœur (TypeScript pur)**
+- `core/draw/bezier.ts` (Béziers → droites et arcs à 10⁻⁴ po), `applique.ts` (formes à nœuds de 4 types, pièces fermées / fils ouverts, auto-intersection, sélection, édition des nœuds : ajouter, supprimer, couper, joindre, convertir ; couronne), `appliqueShapes.ts` (ellipse / pie / arc avec sections, rectangles arrondis, 18 formes, StarMaker, PosieMaker, StencilMaker, trait de pinceau, bande, main levée par ajustement de Béziers), `polydraw.ts` (6 grilles, PolyLigne / PolyArc, cloner et pivoter selon la grille, édition), `content.ts` (dessins `easydraw`, `polydraw`, `applique`, `combo` ; pièces, fils, dessin au trait ; format v1 inchangé, nouveaux types de dessin seulement), `trace.ts` (décalque).
+- `core/text/` : glyphes (opentype.js) → pièces avec trous ; `registry` (polices chargées par l'interface), `sfnt` (noms des polices installées).
+- `core/library/extra.ts` : bibliothèque de 46 éléments (blocs EasyDraw, LeMoyne Star et Dresden Plate en PolyDraw, 6 blocs d'applique, 5 motifs, 4 pochoirs) répartis dans Blocs / Motifs / Pochoirs.
+- Quilt : texte en applique (`FreeItem.text`, `addTextItem`, `setItemText`), fils des motifs et pochoirs (`scene.strands`, tirets bleus au calque 3), conversions automatiques (bloc au calque 2 = motif, au calque 3 = pochoir), pinceau qui colore tout le texte.
+- Impression : trous dans les pièces (contour + trou en couture et en coupe), gabarits **refusés avec un message** si une pièce d'applique se coupe elle-même ; le fond d'un bloc d'applique est une pièce comme une autre (supprimable dans l'aperçu).
 
-**Fait après le commit, NON commité/NON testé en e2e (typecheck propre)**
-- Interface : `shapeDraw.ts`, `shapeGestures.ts`, `ShapePanels.tsx`, `TracePanel.tsx`, `fonts.ts`, `i18n/shape.ts`, intégration dans `BlockCanvas`/`BlockWorkspace` (choix des 6 styles, calques Pièces/Applique, précision), IPC `listInstalledFonts`/`readInstalledFont`, `quiltDraw` (fils), `brushTargets` (texte entier).
+**Interface**
+- Plan Bloc : NOUVEAU BLOC propose les 6 styles ; onglets de calque Pièces / Applique pour les blocs combinés ; palettes PolyDraw (grille et compteurs, outils, miroirs, cloner / cloner-pivoter), applique (Sélection avec X/Y/taille/%/rotation/miroirs/centrer/cloner/ordre, Édition des nœuds, Dessin à 5 sous-outils, Ellipse, Rectangle, Formes, créateurs avec aperçu en direct, couronne), options d'accrochage de l'applique, remplissage auto crème, décalque (import, ajustement, clarté, recadrage numérique, masquer, supprimer).
+- Plan Quilt : outil **Poser le texte** (Maj+glisser au calque 2) et palette TEXTE (police installée affichée dans sa police, taille, gras, italique, alignement). Polices lues par le processus principal (`listInstalledFonts` / `readInstalledFont`, liste fermée aux fichiers listés).
 
-**Reste à faire**
-1. Lancer `npm run e2e` : corriger les régressions éventuelles du plan Bloc ; vérifier à l'œil les vignettes de la bibliothèque (formes : cœur, nuage, etc.).
-2. Quilt : outil « Poser le texte » (Maj+glisser) et palette TEXTE (`TextPanel` à écrire : textarea, police, taille, gras/italique/alignement ; appeler `installFontLookup()` et `ensureFont`, ajouter un `fontTick` aux dépendances de `buildScene`), groupe d'outils de texte au calque 2.
-3. Test Playwright de M8 (cœur avec Formes → coloration → motif calque 2 → gabarit PDF, capture), puis `npm run dist` / `e2e:dist`, puis mise à jour de ce fichier et commit « M8 : … ».
-4. Limites connues à noter : formes paramétriques converties en tracés dès la création ; recadrage du décalque numérique seulement ; Serendipity (M9+).
+## Vérifications M8 (2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **398/398** (+ 1 ignoré) — dont 59 nouveaux : Béziers en arcs (4 cubiques = cercle à 3·10⁻⁴), lacet de Béziers fermé = pièce, ouvert = fil, huit = auto-intersection, couronne (8 groupes à 50 % : centres sur un cercle, 45° entre copies, centrée), grille Cercle 3 anneaux × 8 rayons (21 points), rotation propre Étoile 8 branches = 45°, PolyLigne 4 points = carré d'aire 9, secteur d'anneau à l'aire exacte, « A » avec un trou et « B » avec deux, taille 2 po → capitale ≈ 2 po (± 15 %), LeMoyne (16 pièces) et Dresden (21) remplissent le bloc sans recouvrement, 46 éléments de bibliothèque valides, relecture des 6 styles, conversions calques 2 et 3, gabarit de « AA » avec trous |
+| `npm run e2e` | **44/44** à l'exception d'un arrêt de l'application parfois lent (voir ci-dessous) — dont 4 nouveaux (`applique.spec.ts`) : cœur dessiné avec Formes (capture `m8-applique-coeur.png`), fond + cœur = 2 pièces, Annuler/Rétablir, ajout au carnet ; PolyDraw (4 clics + fermeture = 25 % du bloc) ; motif en 4 sections + StencilMaker rangé dans les pochoirs ; texte « Quilt » au calque 2 (capture `m8-texte.png`, trous visibles). `m3-bibliotheque.png` réenregistrée (46 éléments) |
+| `npm run dist` / `e2e:dist` | 2 exe / 3/3 |
+
+## Décisions prises pendant M8
+
+- **Pièces d'applique = contours de droites et d'arcs** : les Béziers sont approchés par des arcs (tolérance 10⁻⁴ po) pour garder un PDF / SVG exact avec peu de segments ; toutes les fonctions du M1-M7 (marges, gabarits, métrage…) marchent donc sans changement.
+- **Formes paramétriques converties en tracés dès la création** (ellipse, pie, trait de pinceau, bande…) : pas de « forme modifiable jusqu'à sa conversion » ; on les retouche ensuite avec l'Édition des nœuds.
+- **Q-6.4 (géométrie des grilles)** reconstituée : Cercle = centre + a − 1 anneaux + anneaux partiels des coins, b rayons ; Arc = quarts de cercle depuis le coin bas-gauche, b + 1 rayons ; Étoile 8 branches = grille LeMoyne (coins, pointes, losanges) + carré de coin divisé en a × b ; Kaléidoscope et Octogone = a anneaux, côtés divisés en b. À valider sur capture.
+- **Q-6.5 (traits de pinceau)** : 5 contours (uniforme, fuseau, pointe départ, pointe arrivée, ondulé), 3 extrémités (plates, rondes, pointues), graisse = demi-largeur × 1/20 po.
+- **Arrondi des texte** : « taille » = hauteur d'une capitale en pouces ; la boîte se recale sur l'encre à chaque modification (coin haut-gauche fixe).
+- **Un clic de pinceau colore tout le texte** de la boîte ; le texte ne s'imprime qu'en gabarits.
+- **Stencils** : StencilMaker bascule le motif vers l'onglet Pochoirs (case modifiable). Les pochoirs ne sont pas colorables en bloc (aucune coloration enregistrée).
+- **PolyDraw** : pas d'obligation de remplir le bloc, mais la palette affiche le pourcentage couvert et signale un recouvrement.
+
+## Reporté / limites connues (M8)
+
+- Recadrage du décalque seulement par saisie de nombres (pas de poignées à l'œil) ; le décalque n'est pas enregistré avec le bloc.
+- Rectangle de sélection d'un bloc PolyDraw : par boîtes englobantes ; pas de « Aligner les segments » pour les pièces PolyDraw.
+- Serendipity : non fait (P2, M9 ou après-M9). Pas de bloc clé / numérotation de fondation pour les pièces d'applique.
+- Dans l'interface, le texte au calque 2 : un clic dans le trou d'une lettre sélectionne quand même la lettre (la zone de clic du quilt est le contour extérieur).
+- Test e2e `coloring.spec.ts` « bibliothèque : sélection multiple… » : l'arrêt de l'application a dépassé une fois 60 s en suite complète (bibliothèque de 46 vignettes ouverte) ; il passe seul en 9 s.
 
 ## Notes pratiques
 
