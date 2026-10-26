@@ -6,6 +6,7 @@ import { readImageInfo } from "../core/image/info";
 import { encodePng } from "../core/image/png";
 import { arcToBeziers, matScale, type FontRole, type Item, type Page, type PathCmd, type PrintDoc, type PrintFonts } from "../core/print/display";
 import type { FabricTile } from "../core/print/pdf";
+import { isPhotoFabricId } from "../core/print/photo";
 import { printHtml, type SvgFabric } from "../core/print/svg";
 import type { AssetStore } from "../core/project/assets";
 import type { Project } from "../core/project/model";
@@ -44,6 +45,18 @@ const tileCache = new Map<string, FabricTile>();
 
 /** La tuile d'un tissu du carnet : PNG rendu par le générateur, ou les octets de l'image importée. */
 export function fabricTileData(project: Project, assets: AssetStore, fabricId: string): FabricTile | null {
+  if (isPhotoFabricId(fabricId)) {
+    // Une photo du carnet : une seule tuile, à sa taille réelle.
+    const photo = project.sketchbook.photos.find((p) => p.id === fabricId.slice(6));
+    const bytes = photo ? assets.get(photo.asset) : undefined;
+    if (!photo || !bytes) return null;
+    try {
+      const info = readImageInfo(bytes);
+      return { bytes, mime: info.mime, width: info.width / photo.ppi, height: info.height / photo.ppi };
+    } catch {
+      return null;
+    }
+  }
   const fabric = project.sketchbook.fabrics.find((f) => f.id === fabricId);
   if (!fabric) return null;
   const key = JSON.stringify(fabric.source);
@@ -156,8 +169,11 @@ export function drawItems(ctx: CanvasRenderingContext2D, items: readonly Item[],
         ctx.fillStyle = it.fill.rgb;
         ctx.fill();
         if (it.fill.kind === "fabric") {
-          const fabric = o.project.sketchbook.fabrics.find((f) => f.id === (it.fill as { fabricId: string }).fabricId);
-          const tile = fabric ? fabricTiles.tileOf(fabric, o.project, o.assets) : null;
+          const fabricId = (it.fill as { fabricId: string }).fabricId;
+          const photo = isPhotoFabricId(fabricId) ? o.project.sketchbook.photos.find((p) => p.id === fabricId.slice(6)) : undefined;
+          const fabric = o.project.sketchbook.fabrics.find((f) => f.id === fabricId);
+          const decoded = photo ? fabricTiles.photoOf(photo, o.project, o.assets) : null;
+          const tile = photo ? (decoded?.image ? { image: decoded.image, ppi: photo.ppi } : null) : fabric ? fabricTiles.tileOf(fabric, o.project, o.assets) : null;
           if (tile?.image) {
             const pattern = ctx.createPattern(tile.image, "repeat");
             if (pattern) {

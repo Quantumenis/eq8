@@ -104,9 +104,9 @@ class TileStore {
   }
 
   /** Adresse et taille en pixels d'une photo du carnet. */
-  photoOf(photo: PhotoItem, project: Project, assets: AssetStore): { url: string; widthPx: number; heightPx: number } | null {
+  photoOf(photo: PhotoItem, project: Project, assets: AssetStore): { url: string; widthPx: number; heightPx: number; image: ImageBitmap | null } | null {
     const d = this.decodedAsset(photo.asset, assets, project.assets[photo.asset]?.mime ?? "image/png");
-    return d && !d.failed ? { url: d.url, widthPx: d.widthPx, heightPx: d.heightPx } : null;
+    return d && !d.failed ? { url: d.url, widthPx: d.widthPx, heightPx: d.heightPx, image: d.image } : null;
   }
 }
 
