@@ -1,4 +1,4 @@
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron as electron, expect, type ElectronApplication, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -137,4 +137,48 @@ export async function itemTitles(page: Page): Promise<string[]> {
 export async function renameColor(page: Page, index: number, name: string): Promise<void> {
   await page.getByTestId("sketchbook-item").nth(index).click();
   await page.getByTestId("card-name").fill(name);
+}
+
+// ---- Plan Bloc ----------------------------------------------------------------------------------------------
+
+export interface Seg {
+  id: string;
+  kind: "line" | "arc";
+  a: { x: number; y: number };
+  b: { x: number; y: number };
+  sagitta?: number;
+}
+
+/** Position, à l'écran de la page, d'un point du bloc (en pouces). */
+export async function pagePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
+  const canvas = page.getByTestId("block-canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas introuvable");
+  const scale = Number(await canvas.getAttribute("data-scale"));
+  const ox = Number(await canvas.getAttribute("data-origin-x"));
+  const oy = Number(await canvas.getAttribute("data-origin-y"));
+  return { x: box.x + ox + x * scale, y: box.y + oy + y * scale };
+}
+
+export async function drag(page: Page, from: [number, number], to: [number, number], during?: () => Promise<void>): Promise<void> {
+  const a = await pagePoint(page, ...from);
+  const b = await pagePoint(page, ...to);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  if (during) await during();
+  await page.mouse.up();
+}
+
+export async function segments(page: Page): Promise<Seg[]> {
+  return JSON.parse((await page.getByTestId("block-stage").getAttribute("data-segments")) ?? "[]") as Seg[];
+}
+
+export async function openBlockEditor(page: Page): Promise<void> {
+  await page.getByTestId("worktable-block").click();
+  await page.getByTestId("new-easydraw").click();
+  await expect(page.getByTestId("block-canvas")).toBeVisible();
+  // La zone de dessin doit avoir pris sa taille avant qu'on y vise des points.
+  await expect.poll(async () => Number(await page.getByTestId("block-canvas").getAttribute("data-scale"))).toBeGreaterThan(10);
 }

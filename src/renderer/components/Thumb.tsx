@@ -1,16 +1,47 @@
-import type { AnyItem, ListKey } from "../../core/project/model";
+import type { AnyItem, BlockItem, ListKey, Paint } from "../../core/project/model";
 import { easyDrawSegments } from "../../core/draw/draft";
 import { svgPathOf } from "../../core/draw/geometry";
+import { piecePath } from "../../core/draw/pieces";
 import { BlockIcon, ImageIcon, QuiltIcon } from "../icons";
+import { piecesOfDrawing } from "../pieces";
 
 interface ThumbProps {
   list: ListKey;
   item: AnyItem;
   size: number;
+  /** Bloc : la coloration montrée (1 = la première ; 0 = le dessin au trait). Par défaut, la première. */
+  coloringIndex?: number;
+  /** Couleur d'affichage d'un habillage (un tissu s'affiche avec sa couleur moyenne). */
+  colorOf?: (paint: Paint) => string;
 }
 
-/** Vignette d'un élément du carnet. Les aperçus réels (dessin, tissu, quilt) arrivent avec les éditeurs. */
-export function Thumb({ list, item, size }: ThumbProps) {
+const defaultColorOf = (paint: Paint) => (paint.kind === "solid" ? paint.rgb : "#9e9e9e");
+
+/** Le dessin d'un bloc, avec une coloration, en SVG (arcs exacts). */
+export function BlockSvg({ block, coloringIndex, colorOf = defaultColorOf }: { block: BlockItem; coloringIndex?: number; colorOf?: (paint: Paint) => string }) {
+  const segments = easyDrawSegments(block.drawing) ?? [];
+  const index = coloringIndex ?? (block.colorings.length > 0 ? 1 : 0);
+  const coloring = index > 0 ? block.colorings[index - 1] : undefined;
+  const pieces = coloring ? piecesOfDrawing(block.drawing, block.width, block.height) ?? [] : [];
+  const unit = Math.max(block.width, block.height);
+  const seam = coloring ? "#24262b" : "currentColor"; // coutures foncées sur un bloc coloré, quel que soit le thème
+  return (
+    <svg viewBox={`${-unit / 60} ${-unit / 60} ${block.width + unit / 30} ${block.height + unit / 30}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width={block.width} height={block.height} fill="var(--sheet)" />
+      {pieces.map((piece) => {
+        const paint = coloring?.fills[piece.key];
+        return paint ? <path key={piece.key} d={piecePath(piece)} fill={colorOf(paint)} /> : null;
+      })}
+      {segments.map((seg) => (
+        <path key={seg.id} d={svgPathOf(seg)} fill="none" stroke={seam} strokeWidth={unit / (coloring ? 90 : 50)} strokeLinecap="round" />
+      ))}
+      <rect x="0" y="0" width={block.width} height={block.height} fill="none" stroke={seam} strokeWidth={unit / (coloring ? 60 : 40)} />
+    </svg>
+  );
+}
+
+/** Vignette d'un élément du carnet. Les aperçus réels des tissus et des quilts arrivent avec leurs éditeurs. */
+export function Thumb({ list, item, size, coloringIndex, colorOf }: ThumbProps) {
   const style = { width: size, height: size };
 
   if (list === "colors" && "rgb" in item) {
@@ -35,12 +66,7 @@ export function Thumb({ list, item, size }: ThumbProps) {
     if (segments) {
       return (
         <span className="thumb thumb--block" style={style} aria-hidden="true">
-          <svg viewBox={`-0.1 -0.1 ${item.width + 0.2} ${item.height + 0.2}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
-            <rect x="0" y="0" width={item.width} height={item.height} fill="var(--sheet)" stroke="currentColor" strokeWidth={Math.max(item.width, item.height) / 40} />
-            {segments.map((seg) => (
-              <path key={seg.id} d={svgPathOf(seg)} fill="none" stroke="currentColor" strokeWidth={Math.max(item.width, item.height) / 50} strokeLinecap="round" />
-            ))}
-          </svg>
+          <BlockSvg block={item} {...(coloringIndex === undefined ? {} : { coloringIndex })} {...(colorOf ? { colorOf } : {})} />
           {item.colorings.length > 0 && <span className="thumb-badge">{item.colorings.length}</span>}
         </span>
       );

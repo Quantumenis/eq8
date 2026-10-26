@@ -1,7 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { unzipSync, strFromU8 } from "fflate";
-import { createProject, killAllApps, launch, makeSandbox, menuCommand, openSketchbook, type Sandbox } from "./helpers";
+import { createProject, drag, killAllApps, launch, makeSandbox, menuCommand, openBlockEditor, openSketchbook, pagePoint, segments, type Sandbox, type Seg } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -16,48 +16,6 @@ test.afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 300));
   sandbox.dispose();
 });
-
-interface Seg {
-  id: string;
-  kind: "line" | "arc";
-  a: { x: number; y: number };
-  b: { x: number; y: number };
-  sagitta?: number;
-}
-
-/** Position, à l'écran de la page, d'un point du bloc (en pouces). */
-async function pagePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
-  const canvas = page.getByTestId("block-canvas");
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("canvas introuvable");
-  const scale = Number(await canvas.getAttribute("data-scale"));
-  const ox = Number(await canvas.getAttribute("data-origin-x"));
-  const oy = Number(await canvas.getAttribute("data-origin-y"));
-  return { x: box.x + ox + x * scale, y: box.y + oy + y * scale };
-}
-
-async function drag(page: Page, from: [number, number], to: [number, number], during?: () => Promise<void>): Promise<void> {
-  const a = await pagePoint(page, ...from);
-  const b = await pagePoint(page, ...to);
-  await page.mouse.move(a.x, a.y);
-  await page.mouse.down();
-  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
-  await page.mouse.move(b.x, b.y, { steps: 4 });
-  if (during) await during();
-  await page.mouse.up();
-}
-
-async function segments(page: Page): Promise<Seg[]> {
-  return JSON.parse((await page.getByTestId("block-stage").getAttribute("data-segments")) ?? "[]") as Seg[];
-}
-
-async function openBlockEditor(page: Page): Promise<void> {
-  await page.getByTestId("worktable-block").click();
-  await page.getByTestId("new-easydraw").click();
-  await expect(page.getByTestId("block-canvas")).toBeVisible();
-  // La zone de dessin doit avoir pris sa taille avant qu'on y vise des points.
-  await expect.poll(async () => Number(await page.getByTestId("block-canvas").getAttribute("data-scale"))).toBeGreaterThan(10);
-}
 
 test("un bloc de 6 × 6 po : la diagonale glissée est un segment (0,0)-(6,6) ; annuler le retire", async () => {
   const { app, page } = await launch(sandbox);

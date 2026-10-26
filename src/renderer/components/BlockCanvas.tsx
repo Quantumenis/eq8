@@ -3,6 +3,7 @@ import { addSegments, moveNode, moveSegments, setSagitta, snapSettingsOf, transl
 import type { BlockEditor } from "../../core/draw/editor";
 import { arcOf, boundsOf, dist, project, sagittaThrough, unionBounds, type Pt, type Segment } from "../../core/draw/geometry";
 import { addNodesAt } from "../../core/draw/nodes";
+import { pieceAt, type Piece } from "../../core/draw/pieces";
 import { snapPoint, toleranceInInches, type SnapResult } from "../../core/draw/snap";
 import { arcSegment, gridSegments, hitTest, lineSegment } from "../../core/draw/tools";
 import { ACTUAL_SIZE, ZOOM_STEP, fitView, pan, stepZoom, toWorld, zoomAt, zoomPercent, type View } from "../../core/draw/view";
@@ -14,6 +15,17 @@ import { fr } from "../i18n/fr";
 export type Tool = "pick" | "edit" | "line" | "arc" | "grid";
 export type NodeMode = "move" | "here";
 
+/** Onglet COLORATION : les pièces remplacent les outils de dessin. */
+export interface ColoringLayer {
+  pieces: readonly Piece[];
+  /** Couleur d'affichage d'une pièce, ou `null` si elle n'est pas colorée. */
+  colorOf: (key: string) => string | null;
+  /** Pièces entourées en vert (Sélectionner & vaporiser). */
+  highlight: ReadonlySet<string>;
+  onPiece: (piece: Piece | null) => void;
+  cursor: string;
+}
+
 interface Props {
   editor: BlockEditor;
   tool: Tool;
@@ -24,6 +36,7 @@ interface Props {
   unit: DisplayUnit;
   onAdded: (ids: readonly Id[]) => void;
   lastAdded: readonly Id[];
+  coloring?: ColoringLayer | undefined;
 }
 
 type Drag =
@@ -41,7 +54,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
 }
 
-export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode, unit, onAdded, lastAdded }: Props) {
+export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode, unit, onAdded, lastAdded, coloring }: Props) {
   const draft = editor.draft;
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -56,8 +69,8 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
   const paletteRef = useRef<Palette | null>(null);
 
   const selected = useMemo(() => new Set(selection), [selection]);
-  const live = useRef({ draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded });
-  live.current = { draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded };
+  const live = useRef({ draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded, coloring });
+  live.current = { draft, view, tool, selected, grid, nodeMode, onSelect, onAdded, lastAdded, coloring };
 
   const refresh = useCallback(() => setDragTick((n) => n + 1), []);
 
@@ -146,9 +159,10 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       draft: gesture.shown,
       selection: selected,
       preview: gesture.preview,
-      hover,
-      showNodes: tool === "edit",
+      hover: coloring ? null : hover,
+      showNodes: !coloring && tool === "edit",
       palette: paletteRef.current,
+      coloring: coloring ? { pieces: coloring.pieces, colorOf: coloring.colorOf, highlight: coloring.highlight } : null,
     });
   });
   void themeTick;
@@ -225,6 +239,12 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       return;
     }
     if (e.button !== 0) return;
+
+    const layer = live.current.coloring;
+    if (layer) {
+      layer.onPiece(pieceAt(layer.pieces, raw));
+      return;
+    }
 
     if (t === "line" || t === "arc" || t === "grid") {
       const start = snap(raw).point;
@@ -313,7 +333,7 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
     const g = drag.current;
     const { draft: d, tool: t } = live.current;
     if (!g) {
-      setHover(t === "line" || t === "arc" || t === "grid" ? snap(raw) : null);
+      setHover(!live.current.coloring && (t === "line" || t === "arc" || t === "grid") ? snap(raw) : null);
       return;
     }
     if (g.kind === "pan") {
@@ -403,6 +423,9 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
       } else if (mod && (e.key === "0" || e.code === "Numpad0")) {
         e.preventDefault();
         fit();
+      } else if (live.current.coloring) {
+        // Onglet COLORATION : seuls les raccourcis du zoom concernent la zone de dessin.
+        return;
       } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
         live.current.onSelect(d.segments.map((s) => s.id));
@@ -434,10 +457,18 @@ export function BlockCanvas({ editor, tool, selection, onSelect, grid, nodeMode,
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, fit, refresh, zoomStep]);
 
-  const cursor = tool === "pick" ? "default" : tool === "edit" ? "cell" : "crosshair";
+  const cursor = coloring ? coloring.cursor : tool === "pick" ? "default" : tool === "edit" ? "cell" : "crosshair";
 
   return (
-    <div className="block-stage" ref={wrapRef} data-testid="block-stage" data-segments={JSON.stringify(draft.segments)} data-guides={draft.guides.length}>
+    <div
+      className="block-stage"
+      ref={wrapRef}
+      data-testid="block-stage"
+      data-segments={JSON.stringify(draft.segments)}
+      data-guides={draft.guides.length}
+      data-pieces={coloring?.pieces.length}
+      data-filled={coloring?.pieces.filter((p) => coloring.colorOf(p.key) !== null).length}
+    >
       <canvas
         ref={canvasRef}
         className="block-canvas"

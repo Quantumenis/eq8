@@ -7,13 +7,16 @@ import {
   moveBefore,
   setFrameColor,
   sortByClickOrder,
+  splitColorings,
   updateCard,
 } from "../../core/project/commands";
+import { displayColor } from "../../core/draw/coloring";
 import {
   SECTION_IDS,
   isBlockList,
   sectionOf,
   type AnyItem,
+  type BlockItem,
   type BlockListKey,
   type Id,
   type ListKey,
@@ -24,6 +27,7 @@ import { fabricUseCount, quiltsUsingBlock, unusedBlockIds, unusedFabricIds } fro
 import { formatLength, type DisplayUnit } from "../../core/units";
 import { fr } from "../i18n/fr";
 import { useSession } from "../projectSession";
+import { ColoringNav } from "./ColoringNav";
 import { useDialogs } from "./Dialogs";
 import { Modal } from "./Modal";
 import { SortDialog } from "./SortDialog";
@@ -49,8 +53,8 @@ interface Props {
   notify: (message: string) => void;
   /** Appelée après chaque ajout au carnet : « Ajouter au carnet » enregistre le projet. */
   onAdded: () => Promise<void>;
-  /** « Modifier » un bloc du carnet : ouvre son dessin dans le plan Bloc. */
-  onEditBlock: (id: Id) => void;
+  /** « Modifier » un bloc du carnet : ouvre son dessin (et la coloration affichée) dans le plan Bloc. */
+  onEditBlock: (id: Id, coloringIndex: number) => void;
   onClose: () => void;
 }
 
@@ -69,6 +73,8 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
   const [overId, setOverId] = useState<Id | "end" | null>(null);
   const [newColor, setNewColor] = useState("#cc3333");
   const [newColorName, setNewColorName] = useState("");
+  /** Coloration affichée de chaque bloc (1 à n ; 0 = le dessin au trait). */
+  const [coloringOf, setColoringOf] = useState<Record<Id, number>>({});
 
   const list: ListKey = section === "blocks" ? blockTab : section;
   const items = project.sketchbook[list] as AnyItem[];
@@ -87,6 +93,28 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
   }, [thumbSize]);
 
   const select = (id: Id | undefined) => setSelection((s) => ({ ...s, [list]: id }));
+  const colorOf = (paint: Parameters<typeof displayColor>[1]) => displayColor(project, paint) ?? "#9e9e9e";
+  const coloringIndex = (block: BlockItem) => Math.min(coloringOf[block.id] ?? (block.colorings.length > 0 ? 1 : 0), block.colorings.length);
+  const selectedBlock = selected && isBlockList(list) && "colorings" in selected ? selected : null;
+
+  /** « Scinder les colorations » : la pile est coupée en deux blocs à partir de la coloration affichée. */
+  function split() {
+    if (!selectedBlock || !isBlockList(list)) return;
+    const index = coloringIndex(selectedBlock);
+    const coloring = selectedBlock.colorings[index - 1];
+    if (index < 2 || !coloring) return notify(fr.coloring.nav.splitNeed);
+    let newId: Id | null = null;
+    session.execute(fr.coloring.nav.split, (p) => {
+      const r = splitColorings(p, list, selectedBlock.id, coloring.id);
+      newId = r?.newBlockId ?? null;
+      return r?.project ?? p;
+    });
+    if (newId) {
+      setColoringOf((c) => ({ ...c, [selectedBlock.id]: index - 1, [newId as Id]: 1 }));
+      select(newId);
+      notify(fr.coloring.nav.splitDone);
+    }
+  }
   const nameOf = (item: AnyItem) => item.card.name || fr.sketchbook.unnamed;
 
   async function remove() {
@@ -253,7 +281,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
             data-testid="edit-item"
             disabled={!(list === "blocks" && selected)}
             title={list === "blocks" ? undefined : fr.sketchbook.editUnavailable}
-            onClick={() => selected && onEditBlock(selected.id)}
+            onClick={() => selectedBlock && onEditBlock(selectedBlock.id, coloringIndex(selectedBlock))}
           >
             {fr.sketchbook.edit}
           </button>
@@ -319,6 +347,15 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
           </div>
         </div>
 
+        {selectedBlock && (
+          <div className="sk-coloring-bar" data-testid="sketchbook-coloring">
+            <ColoringNav block={selectedBlock} index={coloringIndex(selectedBlock)} onChoose={(i) => setColoringOf((c) => ({ ...c, [selectedBlock.id]: i }))} colorOf={colorOf} />
+            <button type="button" className="btn btn--small" data-testid="split-colorings" title={fr.coloring.nav.splitTitle} disabled={coloringIndex(selectedBlock) < 2} onClick={split}>
+              {fr.coloring.nav.split}
+            </button>
+          </div>
+        )}
+
         <div className="sk-main">
           <div
             className="sk-grid"
@@ -351,7 +388,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onClose }: Prop
                   setOverId(null);
                 }}
               >
-                <Thumb list={list} item={item} size={px} />
+                <Thumb list={list} item={item} size={px} colorOf={colorOf} {...("colorings" in item ? { coloringIndex: coloringIndex(item) } : {})} />
                 {thumbSize !== "tiny" && <span className="sk-item-name">{nameOf(item)}</span>}
               </button>
             ))}

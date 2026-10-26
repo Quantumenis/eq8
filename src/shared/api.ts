@@ -59,6 +59,7 @@ export type MenuCommand =
   | "save-copy"
   | "add-to-sketchbook"
   | "show-sketchbook"
+  | "show-block-library"
   | "undo"
   | "redo"
   | "preferences"

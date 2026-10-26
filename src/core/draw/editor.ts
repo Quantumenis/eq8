@@ -10,6 +10,8 @@ export class BlockEditor {
   private readonly listeners = new Set<() => void>();
   /** Bloc du carnet dont on est parti (« Modifier »), s'il y en a un. */
   sourceBlockId: Id | null = null;
+  /** Position, dans la pile de ce bloc, de la coloration chargée (0 = le dessin au trait). */
+  sourceColoring = 0;
 
   constructor(initial: BlockDraft = newDraft()) {
     this.history = new History(initial);
@@ -68,13 +70,23 @@ export class BlockEditor {
   startNew(): void {
     this.history.reset(newDraft(this.draft.guides));
     this.sourceBlockId = null;
+    this.sourceColoring = 0;
     this.changed();
   }
 
   /** Remplace le brouillon (édition d'un bloc du carnet) et vide l'historique. */
-  load(draft: BlockDraft, sourceBlockId: Id | null): void {
+  load(draft: BlockDraft, sourceBlockId: Id | null, sourceColoring = 0): void {
     this.history.reset(draft);
     this.sourceBlockId = sourceBlockId;
+    this.sourceColoring = sourceColoring;
+    this.changed();
+  }
+
+  /** Rattache le brouillon à un bloc du carnet (après « Ajouter au carnet » ou le choix d'une coloration). */
+  setSource(blockId: Id | null, coloring: number): void {
+    if (blockId === this.sourceBlockId && coloring === this.sourceColoring) return;
+    this.sourceBlockId = blockId;
+    this.sourceColoring = coloring;
     this.changed();
   }
 }

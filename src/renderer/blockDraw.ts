@@ -2,6 +2,7 @@
 
 import type { BlockDraft } from "../core/draw/draft";
 import { arcOf, type Pt, type Segment } from "../core/draw/geometry";
+import { piecePath, type Piece } from "../core/draw/pieces";
 import type { SnapResult } from "../core/draw/snap";
 import { toScreen, toWorld, type View } from "../core/draw/view";
 
@@ -40,6 +41,23 @@ export interface Scene {
   /** Outil Édition : nœuds visibles et, pour un arc sélectionné, ses poignées. */
   showNodes: boolean;
   palette: Palette;
+  /** Onglet COLORATION : pièces remplies, sans grille ni papier millimétré. */
+  coloring: { pieces: readonly Piece[]; colorOf: (key: string) => string | null; highlight: ReadonlySet<string> } | null;
+}
+
+/** Couleur du contour des pièces choisies par « Sélectionner & vaporiser ». */
+const SELECT_GREEN = "#2fbf56";
+/** Coutures sur un bloc coloré : toujours foncées, quel que soit le thème (les tissus sont clairs ou foncés pareil). */
+const SEAM = "#24262b";
+
+const pathCache = new WeakMap<Piece, Path2D>();
+function piecePath2D(piece: Piece): Path2D {
+  let path = pathCache.get(piece);
+  if (!path) {
+    path = new Path2D(piecePath(piece));
+    pathCache.set(piece, path);
+  }
+  return path;
 }
 
 function tracePath(ctx: CanvasRenderingContext2D, view: View, seg: Segment): void {
@@ -72,8 +90,21 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   ctx.fillStyle = palette.sheet;
   ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
 
+  // Pièces colorées (dans le repère du bloc, pour garder les arcs exacts).
+  if (s.coloring) {
+    ctx.save();
+    ctx.setTransform(s.dpr * view.scale, 0, 0, s.dpr * view.scale, s.dpr * view.originX, s.dpr * view.originY);
+    for (const piece of s.coloring.pieces) {
+      const color = s.coloring.colorOf(piece.key);
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fill(piecePath2D(piece));
+    }
+    ctx.restore();
+  }
+
   // Papier millimétré : ne s'imprime pas.
-  if (draft.graph.show) {
+  if (draft.graph.show && !s.coloring) {
     ctx.save();
     ctx.strokeStyle = palette.guide;
     ctx.globalAlpha = 0.22;
@@ -102,7 +133,7 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   // Points d'accrochage, seulement ceux qui sont visibles et assez espacés.
   const gridX = draft.width / draft.snapX;
   const gridY = draft.height / draft.snapY;
-  if (draft.snap.grid && gridX * view.scale >= 7 && gridY * view.scale >= 7) {
+  if (!s.coloring && draft.snap.grid && gridX * view.scale >= 7 && gridY * view.scale >= 7) {
     const w0 = toWorld(view, 0, 0);
     const w1 = toWorld(view, s.width, s.height);
     const i0 = Math.max(0, Math.floor(w0.x / gridX));
@@ -121,12 +152,14 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   }
 
   // Contour du bloc.
-  ctx.strokeStyle = palette.line;
+  const line = s.coloring ? SEAM : palette.line;
+  ctx.strokeStyle = line;
   ctx.lineWidth = 2;
   ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
 
   // Repères.
   ctx.save();
+  if (s.coloring) ctx.globalAlpha = 0;
   ctx.strokeStyle = palette.guide;
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 4]);
@@ -140,10 +173,21 @@ export function paint(ctx: CanvasRenderingContext2D, s: Scene): void {
   ctx.lineCap = "round";
   for (const seg of draft.segments) {
     const selected = s.selection.has(seg.id);
-    ctx.strokeStyle = selected ? palette.accent : palette.line;
-    ctx.lineWidth = selected ? 4 : 2;
+    ctx.strokeStyle = selected && !s.coloring ? palette.accent : line;
+    ctx.lineWidth = selected && !s.coloring ? 4 : s.coloring ? 1.5 : 2;
     tracePath(ctx, view, seg);
     ctx.stroke();
+  }
+
+  // Sélectionner & vaporiser : les pièces semblables entourées en vert.
+  if (s.coloring && s.coloring.highlight.size > 0) {
+    ctx.save();
+    ctx.setTransform(s.dpr * view.scale, 0, 0, s.dpr * view.scale, s.dpr * view.originX, s.dpr * view.originY);
+    ctx.strokeStyle = SELECT_GREEN;
+    ctx.lineWidth = 3.5 / view.scale;
+    ctx.lineJoin = "round";
+    for (const piece of s.coloring.pieces) if (s.coloring.highlight.has(piece.key)) ctx.stroke(piecePath2D(piece));
+    ctx.restore();
   }
 
   // Aperçu du tracé.

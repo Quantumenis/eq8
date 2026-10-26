@@ -10,14 +10,15 @@ import { BlockWorkspace } from "./components/BlockWorkspace";
 import { Sketchbook } from "./components/Sketchbook";
 import { fr } from "./i18n/fr";
 import { BlockIcon, ImageIcon, LogoIcon, QuiltIcon } from "./icons";
-import { addCurrentBlock, editBlockFromSketchbook } from "./blockActions";
+import { BlockLibrary } from "./components/BlockLibrary";
+import { addCurrentBlock, cleanupReport, editBlockFromSketchbook } from "./blockActions";
 import { blockEditor, useBlockEditor } from "./blockEditor";
 import { createProjectActions, currentProjectName, getApi, type ProjectActions } from "./projectActions";
 import { session, useSession } from "./projectSession";
 import { useTheme } from "./useTheme";
 
 type Worktable = "quilt" | "block" | "image";
-type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "prefs" } | null;
+type ModalState = { kind: "helper"; tab: "create" | "open" } | { kind: "sketchbook" } | { kind: "library" } | { kind: "prefs" } | null;
 
 const WORKTABLES: { id: Worktable; icon: ReactNode }[] = [
   { id: "quilt", icon: <QuiltIcon /> },
@@ -135,14 +136,18 @@ function Workspace() {
           return void a.saveCopy();
         case "add-to-sketchbook": {
           if (worktableRef.current !== "block") return notify(fr.messages.nothingToAdd);
-          const outcome = addCurrentBlock();
-          if (outcome === "empty") return notify(fr.draw.emptyBlock);
-          if (outcome === "duplicate") return notify(fr.sketchbook.alreadyThere(fr.itemSingular.blocks));
-          notify(fr.sketchbook.added(fr.itemSingular.blocks));
+          const result = addCurrentBlock();
+          const report = cleanupReport(result.cleanup, prefsRef.current.unit);
+          if (report) void dialogs.alert(report.message, report.detail);
+          if (result.outcome === "empty") return notify(fr.draw.emptyBlock);
+          if (result.outcome === "duplicate") return notify(fr.sketchbook.alreadyThere(fr.itemSingular.blocks));
+          notify(result.outcome === "stacked" ? fr.coloring.stacked(result.position) : fr.sketchbook.added(fr.itemSingular.blocks));
           return void a.afterAddToSketchbook();
         }
         case "show-sketchbook":
           return setModal({ kind: "sketchbook" });
+        case "show-block-library":
+          return setModal({ kind: "library" });
         case "preferences":
           return setModal({ kind: "prefs" });
         case "save-default-palette":
@@ -164,7 +169,7 @@ function Workspace() {
         }
       }
     },
-    [notify],
+    [notify, dialogs],
   );
 
   useEffect(() => getApi().onMenuCommand(runCommand), [runCommand]);
@@ -244,6 +249,9 @@ function Workspace() {
           </button>
           <button type="button" className="btn btn--small" data-testid="tool-add" onClick={() => runCommand("add-to-sketchbook")}>
             {fr.project.addToSketchbook}
+          </button>
+          <button type="button" className="btn btn--small" data-testid="tool-library" title={fr.library.openTitle} onClick={() => setModal({ kind: "library" })}>
+            {fr.library.open}
           </button>
         </div>
 
@@ -336,15 +344,16 @@ function Workspace() {
           unit={prefs.unit}
           notify={notify}
           onAdded={actions.afterAddToSketchbook}
-          onEditBlock={(id) => {
-            if (!editBlockFromSketchbook(id)) return notify(fr.sketchbook.editUnavailable);
+          onEditBlock={(id, coloringIndex) => {
+            if (!editBlockFromSketchbook(id, coloringIndex)) return notify(fr.sketchbook.editUnavailable);
             setModal(null);
             setWorktable("block");
-            setRibbonTab((prev) => ({ ...prev, block: 1 }));
+            setRibbonTab((prev) => ({ ...prev, block: coloringIndex > 0 ? 2 : 1 }));
           }}
           onClose={() => setModal(null)}
         />
       )}
+      {modal?.kind === "library" && <BlockLibrary unit={prefs.unit} notify={notify} onAdded={actions.afterAddToSketchbook} onClose={() => setModal(null)} />}
       {modal?.kind === "prefs" && (
         <Preferences
           prefs={prefs}

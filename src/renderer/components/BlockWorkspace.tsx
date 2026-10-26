@@ -1,21 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { displayColor, findPaletteEntry, paintPieces, paletteEntries, samePaint, similarPieces } from "../../core/draw/coloring";
 import {
   clearGuides,
   convertToGuides,
   isValidSnapCount,
   resizeBlock,
+  setFills,
   setGraphPaper,
   setSnapCounts,
   setSnapOption,
   type BlockDraft,
 } from "../../core/draw/draft";
 import { addNodesAt, addNodesAtIntersections, MAX_PARTS, partitionParams, staggerParams } from "../../core/draw/nodes";
+import { analyzeBlock, type Piece } from "../../core/draw/pieces";
 import { transformSelection, type MirrorAxis, type TransformSpec } from "../../core/draw/transform";
-import type { Id } from "../../core/project/model";
+import type { Id, Paint } from "../../core/project/model";
 import { fromInches, toInches, type DisplayUnit } from "../../core/units";
+import { chooseColoring, cleanCurrentDrawing, cleanupReport, sourceBlock } from "../blockActions";
 import { blockEditor, useBlockEditor } from "../blockEditor";
 import { fr } from "../i18n/fr";
-import { BlockCanvas, type NodeMode, type Tool } from "./BlockCanvas";
+import { paintStore } from "../paintStore";
+import { useSession } from "../projectSession";
+import { BlockCanvas, type ColoringLayer, type NodeMode, type Tool } from "./BlockCanvas";
+import { ColoringNav } from "./ColoringNav";
+import { ColoringPalette, type ColorTool } from "./ColoringPalette";
+import { useDialogs } from "./Dialogs";
 
 interface Props {
   /** Onglet du ruban : 0 NOUVEAU BLOC, 1 DESSIN, 2 COLORATION, 3 IMPRIMER & EXPORTER. */
@@ -103,7 +112,10 @@ function Check({ label, checked, onChange, testId }: { label: string; checked: b
 
 export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   const editor = useBlockEditor();
+  const current = useSession();
+  const dialogs = useDialogs();
   const draft = editor.draft;
+  const project = current.project;
   const [tool, setTool] = useState<Tool>("line");
   const [picked, setPicked] = useState<readonly Id[]>([]);
   const [lastAdded, setLastAdded] = useState<readonly Id[]>([]);
@@ -114,6 +126,110 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
   const [scale, setScale] = useState({ sx: 100, sy: 100 });
   const [parts, setParts] = useState({ partition: 5, stagger: 5 });
   const [snapProblem, setSnapProblem] = useState(false);
+  const [colorTool, setColorToolState] = useState<ColorTool>("brush");
+  const lastPaintTool = useRef<ColorTool>("brush");
+  const [sprayKeys, setSprayKeys] = useState<readonly string[]>([]);
+
+  // ---- Onglet COLORATION -------------------------------------------------------------------------------------
+
+  // Le passage à COLORATION nettoie le dessin (segments pendants, îlots) et prévient de ce qui a été retiré.
+  useEffect(() => {
+    if (tab !== 2) return;
+    const { cleanup } = cleanCurrentDrawing();
+    const report = cleanupReport(cleanup, unit);
+    if (report) void dialogs.alert(report.message, report.detail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  const pieces = useMemo<readonly Piece[]>(
+    () => (tab === 2 ? analyzeBlock(draft.width, draft.height, draft.segments).pieces : []),
+    [tab, draft.width, draft.height, draft.segments],
+  );
+  const pieceKeys = useMemo(() => new Set(pieces.map((p) => p.key)), [pieces]);
+  const liveSpray = useMemo(() => sprayKeys.filter((k) => pieceKeys.has(k)), [sprayKeys, pieceKeys]);
+
+  const setColorTool = (next: ColorTool) => {
+    if (next !== "eyedropper") lastPaintTool.current = next;
+    setSprayKeys([]); // changer d'outil désélectionne
+    setColorToolState(next);
+  };
+
+  const applyPaint = useCallback(
+    (label: string, keys: readonly string[], paint: Paint, coalesce?: string) => {
+      if (keys.length === 0) return;
+      editor.execute(label, (d) => setFills(d, paintPieces(d.fills, keys, paint)), coalesce);
+      paintStore.used(paint);
+    },
+    [editor],
+  );
+
+  const onPiece = (piece: Piece | null) => {
+    if (!piece) {
+      setSprayKeys([]);
+      return;
+    }
+    const fills = editor.draft.fills;
+    const paint = paintStore.get().paint;
+    if (colorTool === "eyedropper") {
+      const found = fills[piece.key];
+      if (!found) return notify(fr.coloring.eyedropperNone);
+      const entry = findPaletteEntry(project, found);
+      paintStore.choose(found, entry?.tab ?? (found.kind === "fabric" ? "fabrics" : "colors"));
+      if (!entry) notify(fr.coloring.eyedropperOutside);
+      setColorTool(lastPaintTool.current); // la pipette rend la main au dernier outil de tissu
+      return;
+    }
+    if (colorTool === "selectSpray") {
+      setSprayKeys(similarPieces(pieces, fills, piece.key));
+      return;
+    }
+    if (!paint) return notify(fr.coloring.chooseFirst);
+    if (colorTool === "brush") applyPaint(fr.coloring.history.paint, [piece.key], paint);
+    else applyPaint(fr.coloring.history.spray, similarPieces(pieces, fills, piece.key), paint);
+  };
+
+  // « Sélectionner & vaporiser » : chaque choix dans la palette est essayé sur la sélection (une seule étape d'annulation).
+  const tryPaint = useCallback(
+    (paint: Paint) => {
+      if (colorTool !== "selectSpray" || liveSpray.length === 0) return;
+      applyPaint(fr.coloring.history.tryPaint, liveSpray, paint, `try:${liveSpray.join(",")}`);
+    },
+    [colorTool, liveSpray, applyPaint],
+  );
+
+  // Les flèches du clavier font défiler les tissus et couleurs sur la sélection.
+  useEffect(() => {
+    if (tab !== 2 || colorTool !== "selectSpray" || liveSpray.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+      if (step === 0) return;
+      const state = paintStore.get();
+      const entries = paletteEntries(project, state.tab);
+      if (entries.length === 0) return;
+      e.preventDefault();
+      const at = entries.findIndex((en) => samePaint(en.paint, state.paint ?? undefined));
+      const next = entries[(at + step + entries.length) % entries.length];
+      if (!next) return;
+      paintStore.choose(next.paint, next.tab);
+      tryPaint(next.paint);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, colorTool, liveSpray, project, tryPaint]);
+
+  const coloringLayer: ColoringLayer | undefined =
+    tab === 2
+      ? {
+          pieces,
+          colorOf: (key) => displayColor(project, draft.fills[key]),
+          highlight: new Set(liveSpray),
+          onPiece,
+          cursor: colorTool === "eyedropper" ? "copy" : "pointer",
+        }
+      : undefined;
+  const source = tab === 2 ? sourceBlock() : null;
 
   // Les identifiants disparus (annulation, suppression) sortent de la sélection.
   const selection = useMemo(() => {
@@ -321,7 +437,9 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
         </>
       )}
 
-      {tab >= 2 && <p className="palette-empty">{fr.draw.soon}</p>}
+      {tab === 2 && <ColoringPalette project={project} tool={colorTool} onTool={setColorTool} selectionCount={liveSpray.length} onPick={tryPaint} />}
+
+      {tab === 3 && <p className="palette-empty">{fr.draw.soon}</p>}
     </aside>
   );
 
@@ -329,6 +447,19 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
     <>
       {palette}
       <main className="worktable worktable--block-edit" data-testid="worktable">
+        {tab === 2 ? (
+          <div className="precision-bar coloring-bar" data-testid="coloring-bar">
+            <ColoringNav
+              block={source}
+              index={source ? editor.sourceColoring : 0}
+              onChoose={(i) => chooseColoring(i)}
+              colorOf={(paint) => displayColor(project, paint) ?? "#9e9e9e"}
+            />
+            <span className="precision-title" data-testid="piece-count">
+              {fr.coloring.pieces(pieces.length)}
+            </span>
+          </div>
+        ) : (
         <div className="precision-bar" role="group" aria-label={fr.draw.precision.title} data-testid="precision-bar">
           <div className="precision-group">
             <span className="precision-title">{fr.draw.precision.size}</span>
@@ -417,6 +548,7 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
             </button>
           </div>
         </div>
+        )}
         <BlockCanvas
           editor={blockEditor}
           tool={tool}
@@ -427,6 +559,7 @@ export function BlockWorkspace({ tab, onTab, unit, notify }: Props) {
           unit={unit}
           lastAdded={lastAdded}
           onAdded={setLastAdded}
+          coloring={coloringLayer}
         />
       </main>
     </>

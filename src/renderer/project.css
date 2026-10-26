@@ -604,3 +604,185 @@ ol.sort-list .sort-item::before {
 .prefs-group p {
   margin: 6px 0;
 }
+
+.dialog-detail {
+  white-space: pre-line;
+}
+
+.thumb--block {
+  color: var(--text);
+}
+
+/* Barre des colorations du carnet */
+.sk-coloring-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* Bibliothèque de blocs */
+.lib {
+  display: grid;
+  grid-template-columns: 220px 1fr 240px;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.lib-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow: auto;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lib-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lib-tree ul ul {
+  padding-left: 22px;
+}
+
+.lib-tree-section {
+  margin-top: 6px;
+  padding: 3px 4px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.lib-tree-section:first-child {
+  margin-top: 0;
+}
+
+button.lib-tree-section {
+  flex: none;
+}
+
+.lib-tree-section--disabled {
+  opacity: 0.5;
+}
+
+.lib-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lib-tree-toggle {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.lib-tree-label {
+  flex: 1;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.lib-tree-label:hover {
+  background: var(--surface-2);
+}
+
+.lib-tree-label[aria-pressed="true"] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
+}
+
+.lib-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  padding: 10px;
+  overflow: auto;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lib-item--added {
+  animation: lib-added 0.7s ease-out;
+}
+
+@keyframes lib-added {
+  0% {
+    opacity: 1;
+  }
+  35% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lib-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lib-card-name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.lib-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.lib-facts dt {
+  color: var(--text-muted);
+}
+
+.lib-facts dd {
+  margin: 0;
+}
+
+.lib-notes {
+  margin: 0;
+  font-size: 12px;
+}
+
+.lib-card .coloring-nav {
+  gap: 2px;
+}
+
+.lib-card .coloring-indicator {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+}
+
+.lib-card .coloring-nav .btn--small {
+  padding: 3px 6px;
+}

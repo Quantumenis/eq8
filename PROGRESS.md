@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M3 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
+> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M4 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -10,9 +10,10 @@
 | Étape 0 — SPEC | ✅ validé | 2026-10-25 |
 | M0 — Squelette, empaquetage, outillage | ✅ terminé | 2026-10-25 |
 | M1 — Projets, carnet, annuler/rétablir, unités | ✅ terminé | 2026-10-26 |
-| **M2 — Éditeur de blocs EasyDraw (dessin)** | ✅ terminé | 2026-10-26 |
-| M3 — Détection des pièces, coloration, bibliothèque de blocs | ⏭️ prochain | — |
-| M4 … M9 | à faire | — |
+| M2 — Éditeur de blocs EasyDraw (dessin) | ✅ terminé | 2026-10-26 |
+| **M3 — Détection des pièces, coloration, bibliothèque de blocs** | ✅ terminé | 2026-10-26 |
+| M4 — Tissus, couleurs et fils | ⏭️ prochain | — |
+| M5 … M9 | à faire | — |
 
 ## M1 — fait
 
@@ -111,9 +112,56 @@
 - L'ajout au carnet enregistre le dessin brut (sans nettoyage) ; M3 appliquera le nettoyage au passage à COLORATION et à l'ajout.
 - Le brouillon en cours n'est pas restauré après un plantage (voir décisions).
 
-## Reste à faire — M3 (voir PLAN.md)
+## M3 — fait
 
-Planarisation (droite-droite, droite-arc, arc-arc avec tolérance), nettoyage itératif (Q-6.1) avec avertissement, extraction des faces et adjacence, onglet COLORATION (palette Tissus & Couleurs avec des couleurs, Récemment utilisés, aperçu détachable), outils Pinceau / Bombe / Pipette, colorations (flèches, « 2 sur 5 », Scinder), bibliothèque de blocs v1 (une vingtaine de blocs générés par code). Réutiliser `src/core/draw/intersect.ts` et `geometry.ts` ; la clé de pièce de `Coloring.fills` reste à définir (SPEC §5.11).
+**Cœur (TypeScript pur)**
+- `draw/pieces.ts` : **planarisation** du dessin et du contour (intersections droite-droite, droite-arc, arc-arc ; extrémités posées sur un segment ; droites superposées et arcs d'un même cercle), **fusion des sommets à 10⁻⁶ po** (extrémités d'origine prioritaires, intersections arrondies à 10⁻⁹), découpe des segments, doublons retirés (une ligne tracée sur le contour disparaît). **Nettoyage Q-6.1** : arêtes pendantes retirées de proche en proche, puis seule la composante connexe du contour est gardée (un îlot qui touche le reste par un sommet reste). **Faces** par demi-arêtes triées autour de chaque sommet (angle de départ, puis courbure pour les tangences) : chaque face bornée est une pièce avec son contour exact (arcs compris), son aire et son centre de gravité **exacts** (formule de Green, segments circulaires), sa boîte, un polygone aplati à 10⁻³ po pour les clics, et ses **voisines**. `pieceAt`, `interiorPoint`, `piecePath` (SVG / Path2D).
+- **Clé de pièce** (`Coloring.fills`, SPEC §5.11) : `p` + 16 caractères hexadécimaux du SHA-256 de l'écriture canonique du contour (sommets arrondis à 10⁻⁹, flèches des arcs, rotation de plus petite écriture). Elle ne dépend ni de l'ordre, ni du sens, ni des identifiants des segments : retoucher une autre partie du dessin garde la couleur des pièces inchangées.
+- `draw/draft.ts` : le brouillon porte sa coloration (`fills`) ; `cleanDrawing` (nettoyage du passage à COLORATION et de l'ajout, idempotent : renvoie le même objet si rien ne change), `setFills`.
+- `draw/coloring.ts` : `samePaint`, `paintPieces` (pinceau), `similarPieces` (bombe : même habillage, pièces non colorées comprises), `pruneFills`, entrées de palette (`paletteEntries`, `findPaletteEntry` pour la pipette), `displayColor` (un tissu s'affiche avec sa couleur moyenne jusqu'au M4), `pushRecent`.
+- `library/builder.ts` + `library/blocks.ts` : **25 blocs** du domaine public construits par « unités » sur une grille (carré, demi-carré, quart de carré, oie volante, bandes, Snowball, coin, carré sur pointe, Economy, quart de cercle, pelure d'orange). Chaque pièce reçoit un rôle de couleur ; **coloration 1 en gris** (même luminance) et **coloration 2 en couleur**. Catégories : 01 Classiques en pièces (Carrés et bandes, Log Cabin, Triangles), 02 Étoiles (Étoiles simples), 03 Courbes (Quarts de cercle). Fiche : nom, référence « Bibliothèque Quilt Studio — catégorie », notes, verso (style, catégories).
+- `project/commands.ts` : « même dessin » compare désormais **sans les identifiants** (avant, « Modifier » puis recolorer n'empilait jamais).
+
+**Interface**
+- Onglet **COLORATION** du plan Bloc : à l'entrée, le dessin est nettoyé (étape d'historique « Nettoyer le dessin ») et un **avertissement liste les segments retirés ou raccourcis** (avec leurs coordonnées) ; Ctrl+Z les rend. La zone de dessin montre les pièces remplies (coutures toujours foncées, quel que soit le thème), sans grille ni papier millimétré.
+- Palette : **Pinceau**, **Bombe**, **Sélectionner & vaporiser** (semblables entourées de vert ; chaque clic dans la palette les essaie ; **flèches du clavier** pour faire défiler ; tous les essais = une seule étape d'annulation ; changer d'outil ou cliquer hors du bloc désélectionne), **Pipette** (la palette saute à l'habillage, puis l'outil précédent revient). « **Tissus & Couleurs du carnet** » : bande **Récemment utilisés** (grise si vide), onglets Tissus / Couleurs, taille des vignettes (− / +), RVB au survol, **aperçu de la sélection détachable** (fenêtre flottante déplaçable et redimensionnable, × pour la rattacher). L'état de la palette vit dans `renderer/paintStore.ts` (à partager avec le plan Quilt).
+- **Colorations** : flèches début (dessin au trait) / précédente / suivante / dernière, indicateur « 2 sur 5 », clic droit (ou clic) sur l'indicateur = **Choisir une coloration** (bande de vignettes). Dans le plan Bloc elles parcourent la pile du bloc d'origine ; dans le carnet, celle du bloc sélectionné, avec **Scinder**. « Modifier » reprend la coloration affichée (et ouvre directement COLORATION si c'en est une).
+- **Ajouter au carnet** depuis le plan Bloc : nettoyage (avec avertissement), puis dessin + coloration (règles d'empilement de M1) ; message « Coloration empilée… » le cas échéant.
+- **Bibliothèque de blocs** (bouton « Bibliothèque », menu **Bibliothèques > Blocs…**, Ctrl+L) : arbre Bibliothèque intégrée (catégories dépliables, styles avec leur nombre), Mes favoris (grisé), Carnet courant ; sélection **clic, Ctrl+clic, Maj+clic, Tout sélectionner** ; **Ajouter au carnet** (dépilage si le maximum vaut 1, doublons reconnus, les éléments « disparaissent » un instant) ; fiche en lecture seule avec flèches de coloration ; nombre d'éléments en bas.
+- Vignettes du carnet : le bloc est dessiné **avec sa coloration** (la première, ou celle affichée).
+
+## Vérifications M3 (toutes vertes, 2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **153/153** (10 fichiers) — dont 60 nouveaux : corpus (Four Patch 4, Nine Patch 9, diagonale 2, Ohio Star 21, Log Cabin 13, Drunkard's Path 2, Churn Dash 17, Flying Geese 3) ; **invariant d'aire** sur les 25 blocs (10⁻⁶) ; quart de cercle = πr²/4 et centre 4r/3π (10⁻⁸ : le dessin est arrondi à 10⁻⁹) ; arcs croisés ; nettoyage (ligne flottante, îlot du Log Cabin p. 120, îlot relié par un sommet gardé, bout qui dépasse, pendants en chaîne, ligne sur le contour, jonctions en T) ; idempotence et clés indépendantes de l'ordre, du sens et des identifiants ; **Euler sur 200 grilles aléatoires** (F = E − V + 1 + C, et pièces = cases + diagonales) ; bombe, pipette, récents ; bibliothèque (2 colorations couvrant toutes les pièces, gris réel) ; empilement après « Modifier » |
+| `npm run e2e` | **28/28** — M0 (5) + M1 (13) + M2 (6) + M3 (4) : Nine Patch à la Grille → COLORATION (9 pièces, 12 segments après coupe) → 5 pièces au pinceau → annuler/rétablir → ajout → « 1 sur 1 » dans le plan et le carnet, `.qsp` relu (1 coloration, 5 habillages) ; avertissement de nettoyage puis Ctrl+Z ; bibliothèque → Modifier la coloration 2 → bombe, pipette (retour à la bombe), Sélectionner & vaporiser + flèches, un seul pas d'annulation, flèche « début » ; sélection multiple, doublons, Tout sélectionner, Choisir une coloration, Scinder. Captures `m3-coloration.png`, `m3-carnet-coloration.png`, `m3-bibliotheque.png` ; `m0-*.png` réenregistrées (nouveau bouton Bibliothèque) et vérifiées à l'œil |
+| `npm run dist` | 2 exe (≈ 125 Mo chacun) |
+| `npm run e2e:dist` | 3/3 |
+
+## Décisions prises pendant M3
+
+- **Clé de pièce géométrique** (ci-dessus) plutôt qu'un numéro d'ordre : stable, indépendante de l'ordre de calcul, et une coloration survit aux retouches qui ne touchent pas la pièce.
+- **Tolérance de fusion 10⁻⁶ po** (la même `EPS` que tout l'éditeur M2) au lieu des 10⁻⁷ évoqués dans les risques du PLAN : un nœud « touche » pour l'éditeur exactement quand il touche pour la planarisation.
+- **Le dessin nettoyé remplace le dessin** (SPEC §6.2 : « un nœud est ajouté à chaque intersection ») : après COLORATION, les segments sont coupés à chaque croisement (un Nine Patch passe de 4 à 12 segments). C'est une étape d'annulation ordinaire.
+- **Blocs de bibliothèque** : noms traditionnels anglais (usage courant chez les patchworkeuses francophones), 25 blocs pour « une vingtaine » ; la liste Q-8.1 se complète en M8. Variable Star = deux demi-carrés par pointe sur une grille de 4. Tailles : grille 2-3 → 6 po, 4 → 8 po, 6 → 6 po, 7 → 7 po, Flying Geese 6 × 3 po.
+- **Pas de blocs par défaut dans un projet neuf** : on les prend dans la bibliothèque (à rediscuter si vous le souhaitez).
+- **Pièce non colorée** : affichée en couleur de feuille ; la bombe la traite comme « même couleur » que les autres pièces non colorées.
+- **Aucune pièce colorée** : « Ajouter au carnet » ajoute le seul dessin au trait (règles M2 inchangées).
+- **Scinder** est dans le carnet (là où l'on voit la pile) ; dans le plan Bloc, les flèches chargent une coloration (étape d'annulation « Choisir une coloration »).
+- **Aides e2e** : `pagePoint`, `drag`, `segments`, `openBlockEditor` sont passées dans `tests/e2e/helpers.ts` ; la zone de dessin expose `data-pieces` et `data-filled` en mode coloration.
+
+## Reporté / limites connues (M3)
+
+- Les tissus s'affichent avec leur **couleur moyenne** et aucun tissu n'existe encore dans un projet : l'onglet Tissus de la palette est vide jusqu'au M4 (motifs, coupe ciblée, bibliothèque de tissus).
+- « Modifier » reste réservé au sous-onglet Blocs (motifs et pochoirs en M8). « Mes favoris », la recherche et l'import de la bibliothèque ne sont pas faits. Pas de suppression d'une seule coloration depuis l'interface (la fonction du cœur existe).
+- Pas d'avertissement visuel « pièce non fermée » pendant le dessin (le nettoyage prévient au passage à COLORATION).
+- La bibliothèque et le carnet montrent la coloration 1 (grise) par défaut ; les flèches montrent la 2.
+
+## Reste à faire — M4 (voir PLAN.md)
+
+Générateur de tissus avec graine (~150 tissus, couleur moyenne précalculée), rendu à l'échelle réelle découpé à la pièce (remplacer `displayColor` par un motif dans `blockDraw.ts` et `Thumb.tsx`), coupe ciblée, import JPG/PNG et plan Image v1, sélecteur de couleurs et gammes OKLab, fils (bibliothèque + outils Fil), recherche par couleur, Mes favoris. La palette « Tissus & Couleurs » (`ColoringPalette.tsx`, `paintStore.ts`) et les habillages `{ kind: "fabric" }` sont déjà en place.
 
 ## Notes pratiques
 

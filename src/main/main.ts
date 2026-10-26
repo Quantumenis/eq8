@@ -162,6 +162,10 @@ async function buildMenu(): Promise<void> {
       ],
     },
     {
+      label: "&Bibliothèques",
+      submenu: [command("Blocs…", "show-block-library", "CmdOrCtrl+L")],
+    },
+    {
       label: "&Aide",
       submenu: [
         {

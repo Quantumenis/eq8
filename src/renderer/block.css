@@ -190,3 +190,240 @@
 .block-readout:empty {
   display: none;
 }
+
+/* Onglet COLORATION : outils de tissu, palette « Tissus & Couleurs du carnet », aperçu de la sélection. */
+
+.btn--tiny {
+  padding: 1px 7px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.palette-hint--strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.palette-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.recent-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 26px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.recent-strip--empty {
+  align-items: center;
+  padding-left: 8px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.palette-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.palette-tabs [role="tab"] {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.palette-tabs [role="tab"][aria-selected="true"] {
+  background: var(--sheet);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.palette-tabs-spacer {
+  flex: 1;
+}
+
+.palette-tabs .btn--tiny {
+  margin-bottom: 3px;
+}
+
+.swatch-grid {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  padding: 4px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-top: none;
+  background: var(--sheet);
+}
+
+.swatch {
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+
+.swatch--recent {
+  width: 20px;
+  height: 20px;
+}
+
+.swatch:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.swatch--current {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preview-head h3 {
+  margin: 0;
+}
+
+.preview-swatch {
+  display: grid;
+  place-items: center;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: repeating-linear-gradient(45deg, var(--surface-2) 0 6px, var(--sheet) 6px 12px);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.preview-caption {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.preview-float {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 200px;
+  height: 170px;
+  min-width: 140px;
+  min-height: 120px;
+  padding: 0 8px 8px;
+  overflow: hidden;
+  resize: both;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.preview-float-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: move;
+  user-select: none;
+}
+
+.preview-float .preview-swatch {
+  flex: 1;
+  height: auto;
+}
+
+/* Barre des colorations (au-dessus de la zone de dessin, et dans le carnet). */
+
+.coloring-bar {
+  align-items: center;
+}
+
+.coloring-nav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.coloring-indicator {
+  min-width: 96px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.coloring-indicator:disabled {
+  color: var(--text-muted);
+}
+
+.coloring-chooser {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 25;
+  display: grid;
+  gap: 6px;
+  max-width: 560px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.coloring-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.coloring-strip-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 11px;
+}
+
+.coloring-strip-item .thumb {
+  width: 56px;
+  height: 56px;
+}
+
+.coloring-strip-item[aria-checked="true"] {
+  border-color: var(--accent);
+}
