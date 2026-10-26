@@ -1,0 +1,137 @@
+/* Plan Quilt : choix de la disposition, réglages, outils de pose et de coloration, calques. */
+
+.palette--quilt {
+  overflow-y: auto;
+}
+
+.kind-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.kind-button {
+  min-height: 44px;
+  text-align: center;
+  white-space: normal;
+}
+
+.center-size {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.size-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.size-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.radio-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.strip-nav {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quilt-finished {
+  position: absolute;
+  right: 12px;
+  bottom: 56px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.quilt-bar {
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.layer-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.layer-tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px 4px;
+}
+
+.layer-tab > button[role="tab"] {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.layer-tab > button[role="tab"][aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.layer-eye[aria-pressed="false"] {
+  opacity: 0.6;
+}
+
+.block-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.block-thumb {
+  aspect-ratio: 1;
+  padding: 3px;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+  cursor: grab;
+}
+
+.block-thumb--chosen {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.thumb--quilt svg {
+  display: block;
+}
+
+.worktable--quilt {
+  display: flex;
+  flex-direction: column;
+}
+
+.worktable--quilt .quilt-stage {
+  flex: 1;
+  min-height: 0;
+}

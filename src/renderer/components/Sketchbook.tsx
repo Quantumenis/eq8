@@ -59,12 +59,14 @@ interface Props {
   onAdded: () => Promise<void>;
   /** « Modifier » un bloc du carnet : ouvre son dessin (et la coloration affichée) dans le plan Bloc. */
   onEditBlock: (id: Id, coloringIndex: number) => void;
+  /** « Modifier » un quilt : sa disposition et sa coloration sont reprises dans le plan Quilt. */
+  onEditQuilt: (id: Id) => void;
   /** « Modifier » une photo : elle est posée sur le plan Image. */
   onEditPhoto: (id: Id) => void;
   onClose: () => void;
 }
 
-export function Sketchbook({ unit, notify, onAdded, onEditBlock, onEditPhoto, onClose }: Props) {
+export function Sketchbook({ unit, notify, onAdded, onEditBlock, onEditQuilt, onEditPhoto, onClose }: Props) {
   const session = useSession();
   const dialogs = useDialogs();
   const project = session.project;
@@ -158,7 +160,7 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onEditPhoto, on
     }
   }
 
-  const canEdit = (list === "blocks" || list === "photos") && selected !== null;
+  const canEdit = (list === "blocks" || list === "photos" || list === "quilts") && selected !== null;
 
   async function remove() {
     if (!selected) return;
@@ -331,10 +333,11 @@ export function Sketchbook({ unit, notify, onAdded, onEditBlock, onEditPhoto, on
             className="btn"
             data-testid="edit-item"
             disabled={!canEdit}
-            title={list === "blocks" || list === "photos" ? undefined : fr.sketchbook.editUnavailable}
+            title={list === "blocks" || list === "photos" || list === "quilts" ? undefined : fr.sketchbook.editUnavailable}
             onClick={() => {
               if (selectedBlock) onEditBlock(selectedBlock.id, coloringIndex(selectedBlock));
               else if (list === "photos" && selected) onEditPhoto(selected.id);
+              else if (list === "quilts" && selected) onEditQuilt(selected.id);
             }}
           >
             {fr.sketchbook.edit}

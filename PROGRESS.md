@@ -1,6 +1,6 @@
 # PROGRESS — Quilt Studio
 
-> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M5 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
+> Pour reprendre après `/clear` : « lis PROGRESS.md, puis fais le M6 de PLAN.md (lis seulement les parties utiles de SPEC.md) ».
 > Références : `SPEC.md` (validé), `QUESTIONS.md` (toutes les recommandations ➜ adoptées), `PLAN.md` (jalons acceptés), `MISSION.md`.
 
 ## Où en est-on
@@ -13,8 +13,9 @@
 | M2 — Éditeur de blocs EasyDraw (dessin) | ✅ terminé | 2026-10-26 |
 | M3 — Détection des pièces, coloration, bibliothèque de blocs | ✅ terminé | 2026-10-26 |
 | **M4 — Tissus, couleurs et fils** | ✅ terminé | 2026-10-26 |
-| M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ⏭️ prochain | — |
-| M6 … M9 | à faire | — |
+| M5 — Quilts : dispositions, pose des blocs, coloration au quilt | ✅ terminé | 2026-10-26 |
+| **M6 — Bordures** | ⏭️ prochain | — |
+| M7 … M9 | à faire | — |
 
 ## M1 — fait
 
@@ -210,9 +211,41 @@
 - Une vignette de fil très clair (« Fil blanc clair ») se voit mal sur fond blanc.
 - Après la fermeture du sélecteur de couleurs, Échap ne ferme plus le carnet (le focus est perdu) : cliquer « Fermer ».
 
-## Reste à faire — M5 (voir PLAN.md)
+## M5 — fait
 
-Plan Quilt : dispositions (Horizontal, Sur la pointe, Pointe variable, Bandes, One Patch, Custom Set), pose des blocs, trois calques, Ajuster, Symétrie, coloration au quilt (pinceaux, bombe, échange, pipettes « la plus proche », coupe ciblée, rotation du tissu, Aléatoire). Le rendu des tissus (`fabricTiles.ts`, `pieceFill`) et les colorations par clé de pièce se réutilisent tels quels.
+**Cœur (`src/core/quilt/`, TypeScript pur)**
+- `geom.ts` (matrices affines, cadres, découpe de polygones convexes, aires), `layout.ts` (paramètres, tailles finies, emplacements du calque 1 ; bornes Q-2.2), `strips.ts` (les 11 styles de bande, formules p. 47), `onepatch.ts` (carré, rectangle, losange, triangle, hexagone, hexagone allongé, pavé, octogone + carré, personnalisé à glissières = parallélogramme).
+- Dispositions : **Horizontal** (lattis, cornerstones, bordure de lattis), **Sur la pointe**, **Pointe variable** (un seul constructeur de losanges ; triangles de bord et de coin par découpe du centre), **Bandes H et V**, **One Patch**, **Custom Set**. Maximum de blocs 24, réglable jusqu'à 100.
+- `doc.ts` (quilt = disposition + blocs posés + éléments libres ; lecture défensive ; `placements` dérivés, résolus par la coloration pour survivre à « Scinder » ; groupe D4 et les 16 états de Symétrie), `scene.ts` (toutes les pièces des 3 calques, clés de coloration `emplacement/clé de pièce`, test de clic), `ops.ts` (pose, Ctrl/Alt, effacer, pivoter/miroir, Symétrie, éléments libres : ajouter, déplacer, supprimer, coller, empiler, centrer, découper, aligner, même taille, redimensionner le Custom Set avec/sans conservation), `adjust.ts` (poignées, redimensionnement, rotation, inclinaison), `paintops.ts` (pinceau 5 styles, bombe, échange, pipettes « la plus proche », coupe ciblée, rotation du tissu simple/avancée/aligner sur un bord, Aléatoire), `editor.ts` (historique illimité du brouillon).
+- Modèle : `Paint` tissu accepte `rotation` (facultatif, format v1 inchangé) ; `fussyCut` la conserve.
+
+**Interface**
+- Plan Quilt : onglets NOUVEAU QUILT (choix du style), DISPOSITION (nombres, tailles avec champ + curseur, bandes ◄ ► Ajouter/Insérer/Supprimer/Cloner, formules, One Patch, Custom Set), DESIGN (outils de bloc, palette Blocs/Motifs/Pochoirs avec colorations et glisser-déposer, Ajuster avec X/Y/L/H/rotation/inclinaison/copier/coller/ordre/centrer/découpe/aligner/même taille, grille d'accrochage, outils de tissu + « Tissus & Couleurs du carnet », options : règles, rotation conservée, basculement automatique, maximum de blocs). Trois calques avec œil, contours masquables, mètre ruban, taille finie en bas à droite, zoom/panoramique. Ajouter au carnet (doublon reconnu), Modifier depuis le carnet, vignettes de quilts.
+- Annuler/Rétablir de la barre : le quilt s'il a un historique, sinon le projet.
+
+## Vérifications M5 (2026-10-26)
+
+| Commande | Résultat |
+|---|---|
+| `npm run typecheck` | 0 erreur |
+| `npm test` | **248/248** (+ 1 ignoré) — dont 44 nouveaux : 37 × 46 po (4 × 5 de 8 po, lattis 1 po, bordure), pointe **48,790**, pointe variable **33 × 51,333**, chaque style de bande et chaque forme One Patch **pavent exactement** le centre, Damier 60/10/3 = 18, comptes de pièces par style (N = 4), rotation avancée (55, 100, 145 ; 60, 120, 180), **Symétrie : 16 états distincts, le 17ᵉ = origine**, Aléatoire (teinte circulaire, saturation et luminosité saturées, tolérance 0), Ctrl/Alt, coupe ciblée sous rotation, aller-retour .qsp |
+| `npm run e2e` | **36/36** (m0 réenregistrées : le plan Quilt n'est plus un espace réservé) — dont 4 nouveaux : Ctrl+clic 20 emplacements, Alt+clic 10, annuler/rétablir, pinceau Ctrl (10 pièces) + capture `m5-quilt-horizontal.png` ; tailles de toutes les dispositions ; Custom Set (poser, X/Largeur, glisser, Suppr) ; Symétrie en pixels : 16 images distinctes puis retour |
+| `npm run dist` / `e2e:dist` | 2 exe / 3/3 |
+
+## Décisions prises pendant M5
+
+- **Sur la pointe** : réseau en quinconce de losanges de pas (b+l)√2 ; centre = n × pas (formule du manuel) ; les triangles de bord et de coin sont les losanges coupés par le centre. **Le style « une couture » (Q-2.4) est enregistré mais dessine la même chose** : à valider avec une capture.
+- Bandes à motifs complexes (Doubles losanges en quinconce) : décomposition en triangles de ma façon (Q-2.5) — à valider visuellement.
+- **Effacer le bloc** sur un élément libre le supprime (pas de « contour vide » conservé).
+- Bloc uni : 6 × 6 po (bouton « + » de la palette). Glisser sur le Custom Set : taille de conception, ou 6 po (option).
+- Rotation avancée : « premier clic » = pièce dont la rotation est 0.
+- Options du plan Quilt mémorisées dans le stockage local de l'interface.
+
+## Reporté / limites connues (M5)
+
+- Baby Blocks, Blocs variables, Photo Patchwork, Quilt à partir d'un bloc, bibliothèque de dispositions : non faits (P2). Fils/pochoirs/broderies du calque 3 : seul l'affichage des lignes ; pas de fil au quilt. Texte en applique : non.
+- Les bordures (M6) : le quilt fini = le centre. Le tissu d'une pièce déformée (pointe variable) n'est pas cisaillé : seule la rotation du bloc l'oriente.
+- Pas de test e2e du glisser-déposer HTML5 depuis la palette (le clic dans le centre fait la même pose), ni de la rotation du tissu / Aléatoire à l'écran (couverts par les tests du cœur).
 
 ## Notes pratiques
 

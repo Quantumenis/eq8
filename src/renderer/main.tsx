@@ -5,6 +5,7 @@ import "./styles.css";
 import "./project.css";
 import "./block.css";
 import "./fabric.css";
+import "./quilt.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Élément #root introuvable");

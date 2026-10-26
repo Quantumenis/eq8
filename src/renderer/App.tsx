@@ -7,6 +7,7 @@ import { Modal } from "./components/Modal";
 import { Preferences } from "./components/Preferences";
 import { ProjectHelper } from "./components/ProjectHelper";
 import { BlockWorkspace } from "./components/BlockWorkspace";
+import { QuiltWorkspace } from "./components/QuiltWorkspace";
 import { Sketchbook } from "./components/Sketchbook";
 import { fr } from "./i18n/fr";
 import { BlockIcon, ImageIcon, LogoIcon, QuiltIcon } from "./icons";
@@ -14,6 +15,8 @@ import { Library } from "./components/Library";
 import { ImageWorkspace, type ImageRequests } from "./components/ImageWorkspace";
 import { addCurrentBlock, cleanupReport, editBlockFromSketchbook } from "./blockActions";
 import { blockEditor, useBlockEditor } from "./blockEditor";
+import { addCurrentQuilt, editQuiltFromSketchbook } from "./quiltActions";
+import { quiltEditor, useQuiltEditor } from "./quiltEditor";
 import { imageEditor, useImageEditor } from "./imageEditor";
 import type { LibraryKind } from "./libraryData";
 import { createProjectActions, currentProjectName, getApi, type ProjectActions } from "./projectActions";
@@ -46,6 +49,7 @@ function Workspace() {
   const current = useSession();
   const blockDoc = useBlockEditor();
   const imageDoc = useImageEditor();
+  const quiltDoc = useQuiltEditor();
   const [imageRequests, setImageRequests] = useState<ImageRequests>({ importImage: 0, editPhoto: null });
   const [worktable, setWorktable] = useState<Worktable>("quilt");
   const [ribbonTab, setRibbonTab] = useState<Record<Worktable, number>>({ quilt: 0, block: 0, image: 0 });
@@ -141,6 +145,13 @@ function Workspace() {
           return void a.saveCopy();
         case "add-to-sketchbook": {
           if (worktableRef.current === "image") return notify(fr.messages.imageAdd);
+          if (worktableRef.current === "quilt") {
+            const added = addCurrentQuilt();
+            if (added.outcome === "empty") return notify(fr.quilt.messages.emptyQuilt);
+            if (added.outcome === "duplicate") return notify(fr.quilt.messages.stacked);
+            notify(fr.quilt.messages.added);
+            return void a.afterAddToSketchbook();
+          }
           if (worktableRef.current !== "block") return notify(fr.messages.nothingToAdd);
           const result = addCurrentBlock();
           const report = cleanupReport(result.cleanup, prefsRef.current.unit);
@@ -178,7 +189,7 @@ function Workspace() {
           } else {
             // Dans les plans Bloc et Image, l'historique est celui du dessin ou de l'image en cours (sauf si une
             // fenêtre comme le carnet est ouverte).
-            const target = modalRef.current ? session : worktableRef.current === "block" ? blockEditor : worktableRef.current === "image" ? imageEditor : session;
+            const target = modalRef.current ? session : worktableRef.current === "block" ? blockEditor : worktableRef.current === "image" ? imageEditor : worktableRef.current === "quilt" ? (command === "undo" ? (quiltEditor.canUndo ? quiltEditor : session) : quiltEditor.canRedo ? quiltEditor : session) : session;
             if (command === "undo") target.undo();
             else target.redo();
           }
@@ -213,7 +224,7 @@ function Workspace() {
     [notify],
   );
 
-  const history = modal ? current : worktable === "block" ? blockDoc : worktable === "image" ? imageDoc : current;
+  const history = modal ? current : worktable === "block" ? blockDoc : worktable === "image" ? imageDoc : worktable === "quilt" ? (quiltDoc.canUndo || quiltDoc.canRedo ? quiltDoc : current) : current;
   const tabs = fr.ribbon[worktable];
   const activeTab = ribbonTab[worktable];
   const name = currentProjectName();
@@ -312,7 +323,9 @@ function Workspace() {
       </nav>
 
       <div className="body">
-        {worktable === "block" ? (
+        {worktable === "quilt" ? (
+          <QuiltWorkspace tab={activeTab} onTab={(index) => setRibbonTab((prev) => ({ ...prev, quilt: index }))} unit={prefs.unit} notify={notify} />
+        ) : worktable === "block" ? (
           <BlockWorkspace
             tab={activeTab}
             onTab={(index) => setRibbonTab((prev) => ({ ...prev, block: index }))}
@@ -373,6 +386,12 @@ function Workspace() {
             setModal(null);
             setWorktable("block");
             setRibbonTab((prev) => ({ ...prev, block: coloringIndex > 0 ? 2 : 1 }));
+          }}
+          onEditQuilt={(id) => {
+            if (!editQuiltFromSketchbook(id)) return notify(fr.sketchbook.editUnavailable);
+            setModal(null);
+            setWorktable("quilt");
+            setRibbonTab((prev) => ({ ...prev, quilt: 3 }));
           }}
           onEditPhoto={(id) => {
             setModal(null);

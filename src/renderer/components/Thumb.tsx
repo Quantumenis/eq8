@@ -1,5 +1,8 @@
 import { useId } from "react";
-import type { AnyItem, BlockItem, ListKey, Paint } from "../../core/project/model";
+import type { AnyItem, BlockItem, ListKey, Paint, QuiltItem } from "../../core/project/model";
+import { displayColor } from "../../core/draw/coloring";
+import { parseDoc } from "../../core/quilt/doc";
+import { buildScene } from "../../core/quilt/scene";
 import { easyDrawSegments } from "../../core/draw/draft";
 import { svgPathOf } from "../../core/draw/geometry";
 import { piecePath } from "../../core/draw/pieces";
@@ -91,6 +94,24 @@ export function BlockSvg({ block, coloringIndex, fillOf = defaultFillOf }: { blo
   );
 }
 
+/** Un quilt du carnet en vignette : ses pièces aplaties, chacune de sa couleur (la couleur moyenne pour un tissu). */
+export function QuiltSvg({ quilt }: { quilt: QuiltItem }) {
+  const doc = parseDoc(quilt.layout);
+  if (!doc) return null;
+  const scene = buildScene(session.project, { doc, fills: quilt.fills });
+  const unit = Math.max(scene.width, scene.height);
+  return (
+    <svg viewBox={`${-unit / 60} ${-unit / 60} ${scene.width + unit / 30} ${scene.height + unit / 30}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-testid="quilt-thumb-svg" data-pieces={scene.pieces.length}>
+      <rect x="0" y="0" width={scene.width} height={scene.height} fill="var(--sheet)" />
+      {scene.pieces
+        .filter((p) => !p.lineOnly)
+        .map((p, i) => (
+          <polygon key={i} points={p.poly.map((q) => `${q.x},${q.y}`).join(" ")} fill={displayColor(session.project, p.paint) ?? "var(--sheet)"} stroke="#24262b" strokeWidth={unit / 400} strokeLinejoin="round" />
+        ))}
+    </svg>
+  );
+}
+
 /** Pouces de tissu montrés dans une vignette de tissu. */
 const FABRIC_THUMB_INCHES = 4;
 
@@ -139,6 +160,13 @@ export function Thumb({ list, item, size, coloringIndex, fillOf }: ThumbProps) {
       <span className="thumb thumb--block" style={style} aria-hidden="true">
         <BlockIcon size={Math.max(16, size - 12)} />
         {item.colorings.length > 0 && <span className="thumb-badge">{item.colorings.length}</span>}
+      </span>
+    );
+  }
+  if (list === "quilts" && "placements" in item && parseDoc(item.layout)) {
+    return (
+      <span className="thumb thumb--block thumb--quilt" style={style} aria-hidden="true">
+        <QuiltSvg quilt={item} />
       </span>
     );
   }

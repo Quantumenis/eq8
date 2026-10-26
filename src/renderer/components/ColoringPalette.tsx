@@ -39,16 +39,6 @@ function swatchTitle(name: string, rgb: string): string {
 /** Palette de l'onglet COLORATION : outils de tissu, « Tissus & Couleurs du carnet » et aperçu de la sélection. */
 export function ColoringPalette({ project, tool, onTool, selectionCount, onPick, onColorMenu }: Props) {
   const state = usePaintState();
-  useFabricTiles();
-  const [sizeIndex, setSizeIndex] = useState(1);
-  const entries = paletteEntries(project, state.tab);
-  const swatch = SWATCH_SIZES[sizeIndex] as number;
-  const assets = session.assets;
-
-  const pick = (paint: Paint, tab?: PaletteTab) => {
-    paintStore.choose(paint, tab);
-    onPick(paint);
-  };
 
   return (
     <>
@@ -76,6 +66,31 @@ export function ColoringPalette({ project, tool, onTool, selectionCount, onPick,
         )}
       </div>
 
+      <PaintSwatches project={project} onPick={onPick} onColorMenu={onColorMenu} />
+
+      {isThreadTool(tool) && <ThreadPanel project={project} thread={state.thread} props={state.threadProps} />}
+
+      <SelectionPreview project={project} paint={state.paint} />
+    </>
+  );
+}
+
+/** « Tissus & Couleurs du carnet » : récemment utilisés, onglets Tissus et Couleurs, taille des vignettes. */
+export function PaintSwatches({ project, onPick, onColorMenu }: { project: Project; onPick: (paint: Paint) => void; onColorMenu?: ((rgb: string, event: MouseEvent) => void) | undefined }) {
+  const state = usePaintState();
+  useFabricTiles();
+  const [sizeIndex, setSizeIndex] = useState(1);
+  const entries = paletteEntries(project, state.tab);
+  const swatch = SWATCH_SIZES[sizeIndex] as number;
+  const assets = session.assets;
+
+  const pick = (paint: Paint, tab?: PaletteTab) => {
+    paintStore.choose(paint, tab);
+    onPick(paint);
+  };
+
+  return (
+    <>
       <div className="palette-group">
         <h3>{fr.coloring.palette}</h3>
         <span className="palette-subtitle">{fr.coloring.recent}</span>
@@ -148,10 +163,6 @@ export function ColoringPalette({ project, tool, onTool, selectionCount, onPick,
           })}
         </div>
       </div>
-
-      {isThreadTool(tool) && <ThreadPanel project={project} thread={state.thread} props={state.threadProps} />}
-
-      <SelectionPreview project={project} paint={state.paint} />
     </>
   );
 }
@@ -246,7 +257,7 @@ function ThreadPanel({ project, thread, props }: { project: Project; thread: Thr
 }
 
 /** Aperçu du tissu ou de la couleur courant ; détachable en fenêtre flottante, déplaçable et redimensionnable. */
-function SelectionPreview({ project, paint }: { project: Project; paint: Paint | null }) {
+export function SelectionPreview({ project, paint }: { project: Project; paint: Paint | null }) {
   const [detached, setDetached] = useState(false);
   const [pos, setPos] = useState({ x: 320, y: 140 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
