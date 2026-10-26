@@ -5,7 +5,7 @@ import type { Paint } from "../project/model";
 import { multiply, rotation, translation, type Mat } from "../quilt/geom";
 import type { Scene } from "../quilt/scene";
 import { formatLength } from "../units";
-import { at, boundaryPath, linePath, polyPath, rectPath, transformSegments, type Item, type Page } from "./display";
+import { at, boundaryPath, holedPath, linePath, polyPath, rectPath, transformSegments, type Item, type Page } from "./display";
 import { cutLength, fillOf, inchFraction, paintName, type Rounding } from "./format";
 import { blockPicture, flowBoxes, keyBlock, lineWidth, pagesOf, sizeText, swatch, withFooters, BLACK, type BlockStyle, type PackBox, type PrintContext } from "./kit";
 import { textWidth } from "./measure";
@@ -69,7 +69,7 @@ export function quiltPicture(scene: Scene, ctx: PrintContext, o: Pick<QuiltPrint
   for (const layer of [1, 2, 3] as const) {
     for (const p of scene.pieces) {
       if (p.layer !== layer) continue;
-      const d = p.block ? boundaryPath(transformSegments(p.block.piece.boundary, p.block.mat)) : polyPath(p.poly);
+      const d = p.block ? holedPath(transformSegments(p.block.piece.boundary, p.block.mat), p.block.piece.holes?.map((h) => transformSegments(h, p.block!.mat))) : polyPath(p.poly);
       if (p.lineOnly) {
         items.push({ kind: "path", d, stroke: { rgb: BLACK, width: lw, dash: [lw * 1.5, lw * 2.5] } });
         continue;
@@ -83,6 +83,10 @@ export function quiltPicture(scene: Scene, ctx: PrintContext, o: Pick<QuiltPrint
       const stroke = o.style === "line" || o.pieceOutlines ? { rgb: BLACK, width: lw } : undefined;
       items.push({ kind: "path", d, ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}) });
     }
+  }
+  for (const st of scene.strands) {
+    const d = st.strand.segments.flatMap((seg, i) => boundaryPath(transformSegments([seg], st.mat), false).filter((c, k) => i === 0 || k > 0));
+    items.push({ kind: "path", d, stroke: { rgb: BLACK, width: lw, ...(st.layer === 3 ? { dash: [lw * 1.5, lw * 2.5] } : {}) } });
   }
   if (o.blockOutlines || o.style === "line") {
     for (const s of scene.slots) items.push({ kind: "path", d: polyPath(s.slot.poly), stroke: { rgb: BLACK, width: lw * 1.5, join: "miter" } });

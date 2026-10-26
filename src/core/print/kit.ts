@@ -5,7 +5,7 @@ import type { Paint, Project } from "../project/model";
 import type { DisplayUnit } from "../units";
 import { formatLength } from "../units";
 import { IDENTITY } from "../quilt/geom";
-import { at, boundaryPath, rectPath, segmentPath, type Item, type Page, type PrintFonts, type Stroke } from "./display";
+import { at, boundaryPath, holedPath, rectPath, segmentPath, type Item, type Page, type PrintFonts, type Stroke } from "./display";
 import { fillOf } from "./format";
 import { pageSize, printableArea, type PageSetup } from "./paper";
 import type { PrintBlock } from "./source";
@@ -44,7 +44,7 @@ export function blockPicture(block: PrintBlock, project: Project, o: PictureOpti
   if (o.style === "fabric" || o.style === "applique") {
     for (const p of block.pieces) {
       const fill = o.style === "applique" ? { kind: "rgb" as const, rgb: "#ffffff" } : (fillOf(project, p.paint, p.fabricMat ?? IDENTITY) ?? { kind: "rgb" as const, rgb: "#ffffff" });
-      items.push({ kind: "path", d: boundaryPath(p.boundary), fill, ...(o.style === "applique" || o.pieceOutlines ? { stroke } : {}) });
+      items.push({ kind: "path", d: holedPath(p.boundary, p.holes), fill, ...(o.style === "applique" || o.pieceOutlines ? { stroke } : {}) });
     }
   }
   if (o.style === "line" || o.style === "stencil") {

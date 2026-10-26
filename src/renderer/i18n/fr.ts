@@ -1088,6 +1088,7 @@ export const fr = {
     roundingMetric: "En métrique, l'arrondi se fait toujours au millimètre.",
     rotaryHint: "Certaines pièces peuvent manquer : seules les formes découpables au cutter sont listées. Vérifiez avec les gabarits.",
     rotaryNone: "Aucune pièce de ce bloc ne se découpe au cutter.",
+    selfIntersect: (n: number) => `${n === 1 ? "Une pièce d'applique se coupe elle-même" : `${n} pièces d'applique se coupent elles-mêmes`} : corrigez le dessin dans le plan Bloc avant d'imprimer ces gabarits.`,
     foundationStyles: { line: "Trait", gray: "Remplissage gris", color: "Remplissage couleur" },
     numbering: "Imprimer la numérotation",
     separate: "Séparer les unités",

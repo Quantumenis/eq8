@@ -1,12 +1,17 @@
 // Le brouillon d'un bloc EasyDraw : sa taille, son accrochage, ses segments et ses repères.
 // Toutes les opérations sont pures (brouillon → brouillon) ; une opération sans effet renvoie le brouillon reçu.
 
-import { createId, type Id, type JsonValue, type Paint, type ThreadStroke } from "../project/model";
+import { createId, type BlockListKey, type Id, type JsonValue, type Paint, type ThreadStroke } from "../project/model";
+import { scaleShapes, type AppShape } from "./applique";
+import { contentOfParts, drawingOfParts, partsOfDrawing, styleHasApplique, styleIsEasy, styleIsPoly, type BlockStyle, type DrawingParts } from "./content";
+import { emptyPoly, scalePoly, type PolyState } from "./polydraw";
+import type { TraceImage } from "./trace";
 import {
   EPS,
   boundsOf,
   clean,
   cleanPt,
+  cleanSegment,
   dist,
   insideRect,
   lerp,
@@ -14,7 +19,7 @@ import {
   type Pt,
   type Segment,
 } from "./geometry";
-import { analyzeBlock, type PieceAnalysis } from "./pieces";
+import type { PieceAnalysis } from "./pieces";
 import type { SnapSettings } from "./snap";
 
 export interface BlockDraft {
@@ -32,13 +37,27 @@ export interface BlockDraft {
   fills: Record<string, Paint>;
   /** Fils des coutures de la coloration en cours, par clé de section (voir threads.ts). */
   threads: Record<string, ThreadStroke>;
+  /** Style du dessin (SPEC §6.0) et ce qu'il contient : segments (EasyDraw), pièces PolyDraw, formes d'applique. */
+  style: BlockStyle;
+  poly: PolyState;
+  shapes: AppShape[];
+  /** Liste du carnet où le bloc sera ajouté (un motif peut aller dans les pochoirs). */
+  list: BlockListKey;
+  /** Options d'accrochage de l'applique et remplissage automatique (SPEC §6.1). */
+  appSnap: { wholePiece: boolean; align: boolean; autoJoin: boolean };
+  autoFill: boolean;
+  /** Image de décalque (SPEC §6.5), tous styles. */
+  trace: TraceImage | null;
 }
 
 export const DEFAULT_BLOCK_SIZE = 6;
 export const DEFAULT_SNAP_PER_BLOCK = 24;
 export const MAX_SNAP = 1000;
 
-export function newDraft(guides: Segment[] = []): BlockDraft {
+/** La liste du carnet par défaut d'un style : les motifs vont dans l'onglet Motifs, le reste dans Blocs. */
+export const defaultListOf = (style: BlockStyle): BlockListKey => (style === "motif" ? "motifs" : "blocks");
+
+export function newDraft(guides: Segment[] = [], style: BlockStyle = "easy"): BlockDraft {
   return {
     width: DEFAULT_BLOCK_SIZE,
     height: DEFAULT_BLOCK_SIZE,
@@ -50,8 +69,17 @@ export function newDraft(guides: Segment[] = []): BlockDraft {
     guides,
     fills: {},
     threads: {},
+    style,
+    poly: emptyPoly(),
+    shapes: [],
+    list: defaultListOf(style),
+    appSnap: { wholePiece: false, align: false, autoJoin: true },
+    autoFill: true,
+    trace: null,
   };
 }
+
+export const partsOf = (d: BlockDraft): DrawingParts => ({ style: d.style, segments: d.segments, poly: d.poly, shapes: d.shapes });
 
 export function snapSettingsOf(d: BlockDraft): SnapSettings {
   return {
@@ -72,7 +100,7 @@ export interface EasyDrawing {
 }
 
 export function toDrawing(d: BlockDraft): JsonValue {
-  return { kind: "easydraw", segments: d.segments.map(cleanSegment) } as unknown as JsonValue;
+  return drawingOfParts(partsOf(d));
 }
 
 export function fromDrawing(
@@ -83,30 +111,31 @@ export function fromDrawing(
   fills: Record<string, Paint> = {},
   threads: Record<string, ThreadStroke> = {},
 ): BlockDraft {
+  const parts = partsOfDrawing(drawing);
   const base = {
-    ...newDraft(guides),
+    ...newDraft(guides, parts?.style ?? "easy"),
     width,
     height,
     graph: { show: true, divX: Math.max(1, Math.round(width)), divY: Math.max(1, Math.round(height)) },
     fills: { ...fills },
     threads: { ...threads },
+    snapX: suggestSnap(width),
+    snapY: suggestSnap(height),
   };
-  const d = drawing as { kind?: string; segments?: Segment[] } | null;
-  if (d && d.kind === "easydraw" && Array.isArray(d.segments)) {
-    return { ...base, snapX: suggestSnap(width), snapY: suggestSnap(height), segments: d.segments.map((s) => ({ ...s, id: createId() })) };
-  }
-  return { ...base, snapX: suggestSnap(width), snapY: suggestSnap(height) };
+  if (!parts) return base;
+  return {
+    ...base,
+    segments: parts.segments.map((s) => ({ ...s, id: createId() })),
+    poly: parts.poly,
+    shapes: parts.shapes,
+  };
 }
 
 function suggestSnap(size: number): number {
   return Math.max(1, Math.min(MAX_SNAP, Math.round(size * 4)));
 }
 
-export function cleanSegment(s: Segment): Segment {
-  return s.kind === "line"
-    ? { id: s.id, kind: "line", a: cleanPt(s.a), b: cleanPt(s.b) }
-    : { id: s.id, kind: "arc", a: cleanPt(s.a), b: cleanPt(s.b), sagitta: clean(s.sagitta) };
-}
+export { cleanSegment };
 
 /** Le nombre de points doit égaler la taille (en unité d'affichage) ou en être un multiple. */
 export function isValidSnapCount(sizeInDisplayUnit: number, count: number): boolean {
@@ -287,6 +316,8 @@ export function resizeBlock(draft: BlockDraft, width: number, height: number): B
     graph: { ...draft.graph, divX: Math.max(1, Math.round(width)), divY: Math.max(1, Math.round(height)) },
     segments: draft.segments.map(scale),
     guides: draft.guides.map(scale),
+    poly: scalePoly(draft.poly, fx, fy),
+    shapes: scaleShapes(draft.shapes, fx, fy),
   };
 }
 
@@ -307,9 +338,12 @@ export function setGraphPaper(draft: BlockDraft, patch: Partial<BlockDraft["grap
   return { ...draft, graph: next };
 }
 
-/** Un brouillon sans aucun segment (le contour du bloc n'est pas un segment). */
+/** Un brouillon sans aucun dessin (le contour du bloc n'est pas un segment). */
 export function isEmpty(draft: BlockDraft): boolean {
-  return draft.segments.length === 0;
+  if (styleIsEasy(draft.style) && draft.segments.length > 0) return false;
+  if (styleIsPoly(draft.style) && draft.poly.pieces.length > 0) return false;
+  if (styleHasApplique(draft.style) && draft.shapes.length > 0) return false;
+  return true;
 }
 
 /** Les segments d'un dessin EasyDraw enregistré, ou `null` si ce n'en est pas un (bloc vide, autre style). */
@@ -323,12 +357,17 @@ export function easyDrawSegments(drawing: JsonValue): Segment[] | null {
 
 /**
  * Nettoyage du passage à COLORATION et de l'ajout au carnet (SPEC §6.2, Q-6.1) : coupe aux intersections, retrait
- * des segments pendants et des îlots. Le brouillon reçu est renvoyé tel quel s'il était déjà propre.
+ * des segments pendants et des îlots (partie EasyDraw seulement). Le brouillon reçu est renvoyé tel quel s'il était
+ * déjà propre. `analysis` contient les pièces de tout le dessin, applique comprise.
  */
 export function cleanDrawing(draft: BlockDraft): { draft: BlockDraft; analysis: PieceAnalysis } {
-  const analysis = analyzeBlock(draft.width, draft.height, draft.segments);
-  if (!analysis.changed) return { draft, analysis };
-  return { draft: { ...draft, segments: analysis.segments.map(cleanSegment) }, analysis };
+  const content = contentOfParts(partsOf(draft), draft.width, draft.height);
+  const easy = content.analysis;
+  const analysis: PieceAnalysis = easy
+    ? { ...easy, pieces: content.pieces }
+    : { pieces: content.pieces, segments: [], removed: [], trimmed: [], changed: false, stats: { vertices: 0, edges: 0, components: 0, faces: content.pieces.length } };
+  if (!easy || !easy.changed) return { draft, analysis };
+  return { draft: { ...draft, segments: easy.segments.map(cleanSegment) }, analysis };
 }
 
 export function setFills(draft: BlockDraft, fills: Readonly<Record<string, Paint>>): BlockDraft {

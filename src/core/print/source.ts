@@ -5,10 +5,9 @@
 
 import type { Pt, Segment } from "../draw/geometry";
 import { interiorPoint, type Piece } from "../draw/pieces";
-import { easyDrawSegments } from "../draw/draft";
 import type { BlockItem, Coloring, Paint, Project } from "../project/model";
 import { applyMat, multiply, rotation as rotationDeg, scaling, translation, type Mat } from "../quilt/geom";
-import { piecesOfBlock, type Scene, type ScenePiece } from "../quilt/scene";
+import { contentOfBlock, piecesOfBlock, type Scene, type ScenePiece } from "../quilt/scene";
 import { flattenBoundary, transformSegments } from "./display";
 import { signedAreaOf } from "./offset";
 
@@ -19,6 +18,9 @@ export interface PrintPiece {
   boundary: Segment[];
   /** Contour aplati à 10⁻⁴ po. */
   polygon: Pt[];
+  /** Trous (texte) : contours exacts, de sens inverse, et leur aplati. */
+  holes?: Segment[][];
+  holePolygons?: Pt[][];
   area: number;
   /** Un point bien à l'intérieur (lettres, étiquettes). */
   inner: Pt;
@@ -38,6 +40,8 @@ export interface PrintBlock {
   lines: Segment[];
   /** Les pièces ont-elles des courbes ? */
   curved: boolean;
+  /** Clés des pièces dont le contour se coupe lui-même (applique) : les gabarits ne s'impriment pas. */
+  invalid?: string[];
 }
 
 /** Contour en sens positif (aire positive dans le repère y vers le bas). */
@@ -47,15 +51,26 @@ export function orient(segs: Segment[]): Segment[] {
   return [...segs].reverse().map((s) => (s.kind === "line" ? { ...s, a: s.b, b: s.a } : { ...s, a: s.b, b: s.a, sagitta: -s.sagitta }));
 }
 
-function makePiece(key: string, boundary: Segment[], paint: Paint | undefined, grain: number, fabricMat?: Mat): PrintPiece {
+function makePiece(key: string, boundary: Segment[], paint: Paint | undefined, grain: number, fabricMat?: Mat, holes: readonly (readonly Segment[])[] = []): PrintPiece {
   const b = orient(boundary);
   const polygon = flattenBoundary(b);
   const area = Math.abs(signedAreaOf(polygon));
   const fake = { polygon, centroid: centroidOf(polygon), area } as unknown as Piece;
   const p: PrintPiece = { key, boundary: b, polygon, area, inner: interiorPoint(fake), grain };
+  if (holes.length > 0) {
+    // Le contour est de sens positif : les trous tournent dans l'autre sens.
+    const fixed = holes.map((h) => (signedAreaOf(flattenBoundary(h, 1e-3)) > 0 ? reverseSegments(h) : [...h]));
+    p.holes = fixed;
+    p.holePolygons = fixed.map((h) => flattenBoundary(h));
+    p.inner = interiorPoint({ ...fake, holePolygons: p.holePolygons } as unknown as Piece);
+  }
   if (paint) p.paint = paint;
   if (fabricMat) p.fabricMat = fabricMat;
   return p;
+}
+
+function reverseSegments(segs: readonly Segment[]): Segment[] {
+  return [...segs].reverse().map((s) => (s.kind === "line" ? { ...s, a: s.b, b: s.a } : { ...s, a: s.b, b: s.a, sagitta: -s.sagitta }));
 }
 
 function centroidOf(poly: readonly Pt[]): Pt {
@@ -100,9 +115,9 @@ export function blockSource(block: BlockItem, coloring: Coloring | null, size: {
   const pieces = piecesOfBlock(block).map((piece) => {
     const paint = coloring?.fills[piece.key];
     const fabricMat = paintMat(paint, mirror ? [-1, 0, 0, 1, size.width, 0] : [1, 0, 0, 1, 0, 0]);
-    return makePiece(piece.key, transformSegments(piece.boundary, m), paint, 0, fabricMat);
+    return makePiece(piece.key, transformSegments(piece.boundary, m), paint, 0, fabricMat, (piece.holes ?? []).map((h) => transformSegments(h, m)));
   });
-  const drawing = easyDrawSegments(block.drawing) ?? [];
+  const drawing = contentOfBlock(block).lines;
   const outline: Segment[] = [
     { id: "o1", kind: "line", a: { x: 0, y: 0 }, b: { x: block.width, y: 0 } },
     { id: "o2", kind: "line", a: { x: block.width, y: 0 }, b: { x: block.width, y: block.height } },
@@ -110,7 +125,8 @@ export function blockSource(block: BlockItem, coloring: Coloring | null, size: {
     { id: "o4", kind: "line", a: { x: 0, y: block.height }, b: { x: 0, y: 0 } },
   ];
   const lines = transformSegments([...outline, ...drawing], m);
-  return { name, width: size.width, height: size.height, pieces, lines, curved: lines.some((s) => s.kind === "arc") };
+  const invalid = contentOfBlock(block).issues.filter((i) => i.kind === "selfIntersect").map((i) => (i.kind === "selfIntersect" ? i.key : ""));
+  return { name, width: size.width, height: size.height, pieces, lines, curved: lines.some((s) => s.kind === "arc"), ...(invalid.length > 0 ? { invalid } : {}) };
 }
 
 /** Origine du tissu (coupe ciblée comprise) : le coin du bloc, décalé de `offset`, tourné de `rotation`. */
@@ -200,7 +216,7 @@ export function quiltSource(scene: Scene, owner: string, name: string, size: { w
       const world = multiply(translation(sp.origin.x, sp.origin.y), multiply(rotationDeg(sp.angle), multiply(translation(off.x, off.y), rotationDeg(sp.paint.rotation ?? 0))));
       fabricMat = multiply(m, world);
     }
-    return makePiece(sp.key, boundary, sp.paint, grain, fabricMat);
+    return makePiece(sp.key, boundary, sp.paint, grain, fabricMat, (sp.block?.piece.holes ?? []).map((h) => transformSegments(h, multiply(m, sp.block!.mat))));
   });
   const lines = uniqueEdges(pieces);
   return { name, width: w, height: h, pieces, lines, curved: lines.some((s) => s.kind === "arc") };

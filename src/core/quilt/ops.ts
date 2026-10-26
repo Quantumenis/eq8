@@ -30,6 +30,7 @@ import {
 } from "./layout";
 import { buildScene, itemPolygon, sameRef, type Scene, type SceneItem, type SceneSlot } from "./scene";
 import { createId } from "../project/model";
+import type { TextSpec } from "../text/glyphs";
 
 type Fills = Readonly<Record<string, Paint>>;
 
@@ -236,6 +237,34 @@ export function addItem(draft: QuiltDraft, project: Project, input: { layer: Lay
     clip: "edge",
   };
   return { draft: { doc: { ...draft.doc, items: [...draft.doc.items, item] }, fills: draft.fills }, id: item.id };
+}
+
+/** Pose un texte en applique au calque 2 : `w` et `h` sont la boîte tracée (elle se recale sur le texte quand on le tape). */
+export function addTextItem(draft: QuiltDraft, input: { x: number; y: number; w: number; h: number; spec: TextSpec }): { draft: QuiltDraft; id: Id } {
+  const item: FreeItem = {
+    id: createId(),
+    layer: 2,
+    blockId: "",
+    coloringId: "",
+    x: round(input.x),
+    y: round(input.y),
+    w: Math.max(0.01, round(input.w)),
+    h: Math.max(0.01, round(input.h)),
+    rot: 0,
+    flip: false,
+    angle: 0,
+    skew: 0,
+    clip: "edge",
+    text: input.spec,
+  };
+  return { draft: { doc: { ...draft.doc, items: [...draft.doc.items, item] }, fills: draft.fills }, id: item.id };
+}
+
+/** Change le texte d'une boîte ; `dims` (la taille de l'encre) recale la boîte sur le nouveau texte, coin haut-gauche fixe. */
+export function setItemText(draft: QuiltDraft, id: Id, spec: TextSpec, dims?: { w: number; h: number } | null): QuiltDraft {
+  const cur = draft.doc.items.find((i) => i.id === id);
+  if (!cur?.text) return draft;
+  return updateItem(draft, id, { text: spec, ...(dims ? { w: dims.w, h: dims.h } : {}) });
 }
 
 export function updateItem(draft: QuiltDraft, id: Id, patch: Partial<Omit<FreeItem, "id" | "layer">>): QuiltDraft {

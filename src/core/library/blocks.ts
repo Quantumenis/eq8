@@ -76,6 +76,104 @@ function fourPatch(x: number, y: number, a: number, b: number): Unit[] {
   return [sq(x, y, a), sq(x + 1, y, b), sq(x, y + 1, b), sq(x + 1, y + 1, a)];
 }
 
+/** Six classiques de plus (M8) : le reste de la bibliothèque de pièces. */
+const MORE_CLASSICS: LibraryBlockDef[] = [
+  {
+    id: "sixteen-patch",
+    name: "Sixteen Patch",
+    category: CATEGORIES.classic,
+    style: STYLES.squares,
+    notes: "Seize carrés en damier.",
+    nx: 4,
+    ny: 4,
+    cell: 1.5,
+    units: Array.from({ length: 16 }, (_, i) => sq(i % 4, Math.floor(i / 4), ((i % 4) + Math.floor(i / 4)) % 2 === 0 ? 1 : 0)),
+    colors: [CREAM, TEAL],
+  },
+  {
+    id: "double-four-patch",
+    name: "Double Four Patch",
+    category: CATEGORIES.classic,
+    style: STYLES.squares,
+    notes: "Cinq Four Patch en damier avec quatre grands carrés unis.",
+    nx: 6,
+    ny: 6,
+    cell: 1,
+    units: [
+      ...fourPatch(0, 0, 1, 0),
+      ...fourPatch(4, 0, 1, 0),
+      ...fourPatch(2, 2, 1, 0),
+      ...fourPatch(0, 4, 1, 0),
+      ...fourPatch(4, 4, 1, 0),
+      sq(2, 0, 2, 2, 2),
+      sq(0, 2, 2, 2, 2),
+      sq(4, 2, 2, 2, 2),
+      sq(2, 4, 2, 2, 2),
+    ],
+    colors: [CREAM, ROSE, LILAC],
+  },
+  {
+    id: "birds-in-the-air",
+    name: "Birds in the Air",
+    category: CATEGORIES.classic,
+    style: STYLES.triangles,
+    notes: "Quatre demi-carrés qui forment des oiseaux en vol.",
+    nx: 2,
+    ny: 2,
+    cell: 3,
+    units: [hst(0, 0, "/", [0, 1]), hst(1, 0, "/", [0, 1]), hst(0, 1, "\\", [1, 0]), hst(1, 1, "\\", [1, 0])],
+    colors: [CREAM, SKY],
+  },
+  {
+    id: "diamond-in-a-square",
+    name: "Diamond in a Square",
+    category: CATEGORIES.classic,
+    style: STYLES.triangles,
+    notes: "Un losange posé sur la pointe dans un carré.",
+    nx: 1,
+    ny: 1,
+    cell: 6,
+    units: [{ kind: "diamond", x: 0, y: 0, w: 1, h: 1, roles: [1, 0] }],
+    colors: [CREAM, FUCHSIA],
+  },
+  {
+    id: "geese-column",
+    name: "Geese Column",
+    category: CATEGORIES.classic,
+    style: STYLES.triangles,
+    notes: "Trois oies volantes superposées.",
+    nx: 2,
+    ny: 3,
+    cell: 2,
+    units: [0, 1, 2].map((y) => ({ kind: "geese" as const, x: 0, y, w: 2, h: 1, point: "up" as const, roles: [1, 0] as [number, number] })),
+    colors: [SKY, GOLD],
+  },
+  {
+    id: "four-pinwheels",
+    name: "Four Pinwheels",
+    category: CATEGORIES.classic,
+    style: STYLES.triangles,
+    notes: "Quatre moulinets en damier de couleurs.",
+    nx: 4,
+    ny: 4,
+    cell: 1.5,
+    units: [
+      ...[
+        [0, 0, 1, 0],
+        [2, 0, 2, 0],
+        [0, 2, 2, 0],
+        [2, 2, 1, 0],
+      ].flatMap(([x, y, dark, light]) => [
+        hst(x as number, y as number, "\\", [dark as number, light as number]),
+        hst((x as number) + 1, y as number, "/", [light as number, dark as number]),
+        hst((x as number) + 1, (y as number) + 1, "\\", [light as number, dark as number]),
+        hst(x as number, (y as number) + 1, "/", [dark as number, light as number]),
+      ]),
+    ],
+    colors: [CREAM, BLUE, RED],
+  },
+];
+
 export const LIBRARY_BLOCKS: LibraryBlockDef[] = [
   // ---- 01 Classiques en pièces : carrés et bandes
   {
@@ -484,6 +582,7 @@ export const LIBRARY_BLOCKS: LibraryBlockDef[] = [
     units: [{ kind: "peel", x: 0, y: 0, w: 1, h: 1, roles: [1, 0] }],
     colors: [LIGHT_GREEN, ORANGE],
   },
+  ...MORE_CLASSICS,
 ];
 
 const built = new Map<string, BuiltBlock>();

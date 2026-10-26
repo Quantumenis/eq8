@@ -6,8 +6,10 @@
 //  - élément libre : « identifiant/clé de pièce ».
 // Une pièce de bloc non retouchée au quilt prend l'habillage de la coloration du bloc.
 
-import { easyDrawSegments } from "../draw/draft";
-import { analyzeBlock, type Piece } from "../draw/pieces";
+import { contentOfDrawing, type DrawingContent } from "../draw/content";
+import type { Piece } from "../draw/pieces";
+import type { Strand } from "../draw/applique";
+import { textBlockOf } from "../text/registry";
 import { samePaint } from "../draw/coloring";
 import type { BlockItem, Id, Paint, Project } from "../project/model";
 import { findBlock } from "../project/model";
@@ -34,18 +36,13 @@ import { buildLayout, type LayoutResult, type Slot, type SlotRole } from "./layo
 // ---------------------------------------------------------------------------------------------------------------
 // Pièces d'un bloc du carnet (mises en cache : un projet est immuable)
 
-const pieceCache = new WeakMap<object, { width: number; height: number; pieces: Piece[] }>();
+/** Le contenu (pièces, fils) d'un bloc du carnet ; mis en cache par le dessin : un projet est immuable. */
+export function contentOfBlock(block: BlockItem): DrawingContent {
+  return contentOfDrawing(block.drawing, block.width, block.height);
+}
 
 export function piecesOfBlock(block: BlockItem): Piece[] {
-  const drawing = block.drawing;
-  const segments = easyDrawSegments(drawing) ?? [];
-  if (typeof drawing === "object" && drawing !== null) {
-    const hit = pieceCache.get(drawing);
-    if (hit && hit.width === block.width && hit.height === block.height) return hit.pieces;
-  }
-  const pieces = analyzeBlock(block.width, block.height, segments).pieces;
-  if (typeof drawing === "object" && drawing !== null) pieceCache.set(drawing, { width: block.width, height: block.height, pieces });
-  return pieces;
+  return contentOfBlock(block).pieces;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -115,9 +112,22 @@ export interface ScenePiece {
   lineOnly: boolean;
   /** Le bloc posé (identité du bloc et de sa coloration) pour « blocs identiques ». */
   ref?: { blockId: Id; coloringId: Id | "" };
+  /** Pièce d'un texte en applique : un clic de pinceau colore tout le texte de la boîte. */
+  text?: boolean;
   /** Position pour « un sur deux ». */
   row: number;
   col: number;
+}
+
+/** Un fil (tracé ouvert d'un motif ou d'un pochoir) posé dans le quilt. */
+export interface SceneStrand {
+  key: string;
+  owner: string;
+  layer: Layer;
+  itemId?: Id;
+  strand: Strand;
+  /** Du repère du bloc vers le repère du centre. */
+  mat: Mat;
 }
 
 export interface SceneItem {
@@ -143,15 +153,27 @@ export interface Scene {
   slots: SceneSlot[];
   items: SceneItem[];
   pieces: ScenePiece[];
+  strands: SceneStrand[];
 }
 
-function blockMatFor(block: BlockItem, frame: Mat, rot: number, flip: boolean): Mat {
+function blockMatFor(block: { width: number; height: number }, frame: Mat, rot: number, flip: boolean): Mat {
   return multiply(frame, multiply(unitTransform(rot, flip), scaling(1 / block.width, 1 / block.height)));
 }
 
+/** Ce qu'il faut d'un bloc pour poser ses pièces : un bloc du carnet, ou un bloc de texte. */
+interface PlacedBlock {
+  id: Id;
+  width: number;
+  height: number;
+  colorings: BlockItem["colorings"];
+  pieces: Piece[];
+}
+
+const placedOf = (block: BlockItem): PlacedBlock => ({ id: block.id, width: block.width, height: block.height, colorings: block.colorings, pieces: piecesOfBlock(block) });
+
 function blockPieces(
   project: Project,
-  block: BlockItem,
+  block: PlacedBlock,
   coloringId: Id | "",
   frame: Mat,
   rot: number,
@@ -168,7 +190,7 @@ function blockPieces(
   const origin = applyMat(mat, { x: 0, y: 0 });
   const angle = matAngle(mat);
   void ownerKey;
-  return piecesOfBlock(block).map((piece) => {
+  return block.pieces.map((piece) => {
     const key = `${keyPrefix}/${piece.key}`;
     const base = coloring?.fills[piece.key];
     const paint = fills[key] ?? base;
@@ -196,6 +218,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
   const pieces: ScenePiece[] = [];
   const slots: SceneSlot[] = [];
   const items: SceneItem[] = [];
+  const strands: SceneStrand[] = [];
   const borders = buildBorders(layout.width, layout.height, doc.borders);
 
   for (const slot of [...layout.slots, ...borders.slots]) {
@@ -207,7 +230,7 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
       pieces.push(
         ...blockPieces(
           project,
-          block,
+          placedOf(block),
           ref.coloringId,
           frameMat(slot.frame),
           placed.rot,
@@ -244,15 +267,37 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
 
   const sceneItems = [...doc.items].sort((a, b) => a.layer - b.layer);
   for (const item of sceneItems) {
-    const ref = resolveRef(project, item);
-    const block = ref ? findBlock(project, ref.blockId)?.block : undefined;
     const mat = itemMat(item);
     items.push({ item, poly: itemPolygon(item), mat });
+    if (item.text) {
+      // Texte en applique : les pièces viennent des glyphes (rien tant que la police n'est pas chargée).
+      const tb = textBlockOf(item.text);
+      if (!tb) continue;
+      pieces.push(
+        ...blockPieces(
+          project,
+          { id: "", width: tb.width, height: tb.height, colorings: [], pieces: tb.pieces },
+          "",
+          mat,
+          item.rot,
+          item.flip,
+          fills,
+          item.id,
+          item.id,
+          item.layer,
+          { owner: item.id, itemId: item.id, role: "item", row: 0, col: 0 },
+          false,
+        ).map((p) => ({ ...p, text: true })),
+      );
+      continue;
+    }
+    const ref = resolveRef(project, item);
+    const block = ref ? findBlock(project, ref.blockId)?.block : undefined;
     if (!ref || !block) continue;
     pieces.push(
       ...blockPieces(
         project,
-        block,
+        placedOf(block),
         ref.coloringId,
         mat,
         item.rot,
@@ -265,9 +310,12 @@ export function buildScene(project: Project, draft: QuiltDraft, layout: LayoutRe
         item.layer === 3,
       ),
     );
+    for (const strand of contentOfBlock(block).strands) {
+      strands.push({ key: `${item.id}/${strand.key}`, owner: item.id, layer: item.layer, itemId: item.id, strand, mat: blockMatFor(block, mat, item.rot, item.flip) });
+    }
   }
 
-  return { width: layout.width, height: layout.height, layout, borders, bounds: borders.bounds, slots, items, pieces };
+  return { width: layout.width, height: layout.height, layout, borders, bounds: borders.bounds, slots, items, pieces, strands };
 }
 
 /** Les clés de coloration qui existent dans la scène (les autres viennent d'une disposition changée). */

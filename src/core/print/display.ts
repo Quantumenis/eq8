@@ -174,6 +174,11 @@ export function boundaryPath(segs: readonly Segment[], close = true): PathCmd[] 
   return d;
 }
 
+/** Tracé d'une pièce : son contour, puis ses trous (de sens inverse, pour que le remplissage les laisse vides). */
+export function holedPath(boundary: readonly Segment[], holes?: readonly (readonly Segment[])[]): PathCmd[] {
+  return [...boundaryPath(boundary), ...(holes ?? []).flatMap((h) => boundaryPath(h))];
+}
+
 /** Tracé d'un segment isolé (droite ou arc). */
 export function segmentPath(seg: Segment): PathCmd[] {
   return boundaryPath([seg], false);

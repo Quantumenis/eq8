@@ -246,6 +246,7 @@ export function PrintDialog({ kind, subject, unit, notify, onClose }: Props) {
         return { doc: { title, pages: r.pages }, placed: null, message: null };
       }
       if (!block) return empty(fr.print.needSelection);
+      if ((kind === "templates" || kind === "foundation" || kind === "rotary") && block.invalid && block.invalid.length > 0) return empty(fr.print.selfIntersect(block.invalid.length));
       if (kind === "block") {
         const style = coloring === 0 && subject.from === "plan" && o.blockStyle === "fabric" ? "line" : o.blockStyle;
         return { doc: { title, pages: blockPages(block, ctx, { style, printName: o.printName, fillPage: o.fillPage, lineWidth: o.lineWidth, blockOutline: o.blockOutline, pieceOutlines: o.pieceOutlines }) }, placed: null, message: null };

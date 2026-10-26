@@ -3,7 +3,7 @@
 // recherche (par couleur ; par texte pour les fils) et, pour les tissus, les résultats d'import d'images.
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
-import { LIBRARY_BLOCKS, instantiateLibraryBlock } from "../../core/library/blocks";
+import { libraryEntryById, instantiateEntry } from "../../core/library/extra";
 import {
   MAX_STYLES,
   MIN_STYLES,
@@ -27,7 +27,7 @@ import { formatLength, type DisplayUnit } from "../../core/units";
 import { fabricBackground, fabricTiles, useFabricTiles } from "../fabricTiles";
 import { fr } from "../i18n/fr";
 import { decodeImage } from "../imageEditor";
-import { builtinLibrary, itemsOf, libraryClipboard, loadFavorites, saveFavorite, setLibraryClipboard, type LibraryKind } from "../libraryData";
+import { blockListOf, builtinLibrary, itemsOf, libraryClipboard, loadFavorites, saveFavorite, setLibraryClipboard, type LibraryKind } from "../libraryData";
 import { pieceFill } from "../paintView";
 import { getApi } from "../projectActions";
 import { useSession } from "../projectSession";
@@ -188,15 +188,16 @@ export function Library({ kind, unit, notify, onAdded, onClose }: Props) {
       for (const entry of selectedEntries) {
         if (entry.builtin && kind === "blocks") {
           // Bloc de la bibliothèque intégrée : ses deux colorations (dépilées si le maximum vaut 1).
-          const def = LIBRARY_BLOCKS.find((d) => d.id === entry.item.id);
+          const def = libraryEntryById(entry.item.id);
           if (!def) continue;
-          const r = addLibraryBlock(next, "blocks", instantiateLibraryBlock(def));
+          const made = instantiateEntry(def);
+          const r = addLibraryBlock(next, made.list, made.item);
           next = r.project;
           if (r.blockIds.length > 0) added += 1;
           else duplicates += 1;
           continue;
         }
-        const r = transferItems(next, session.assets, entry.source, kind, [entry.item.id]);
+        const r = transferItems(next, session.assets, entry.source, kind === "blocks" ? blockListOf(entry.source, entry.item.id) : kind, [entry.item.id]);
         next = r.project;
         added += r.added.length;
         duplicates += r.duplicates;

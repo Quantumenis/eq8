@@ -3,7 +3,7 @@ import type { AnyItem, BlockItem, ListKey, Paint, QuiltItem } from "../../core/p
 import { displayColor } from "../../core/draw/coloring";
 import { parseDoc } from "../../core/quilt/doc";
 import { buildScene } from "../../core/quilt/scene";
-import { easyDrawSegments } from "../../core/draw/draft";
+import { contentOfDrawing, partsOfDrawing } from "../../core/draw/content";
 import { svgPathOf } from "../../core/draw/geometry";
 import { piecePath } from "../../core/draw/pieces";
 import { sectionsOf, threadDash, threadWidth } from "../../core/draw/threads";
@@ -11,7 +11,6 @@ import type { PieceFill } from "../blockDraw";
 import { fabricBackground, fabricTiles, useFabricTiles } from "../fabricTiles";
 import { BlockIcon, ImageIcon, QuiltIcon } from "../icons";
 import { session } from "../projectSession";
-import { piecesOfDrawing } from "../pieces";
 
 /** Remplissage d'un habillage dans une vignette (couleur, ou tuile de tissu). */
 export type FillOf = (paint: Paint) => PieceFill;
@@ -31,10 +30,11 @@ const defaultFillOf: FillOf = (paint) => ({ color: paint.kind === "solid" ? pain
 /** Le dessin d'un bloc, avec une coloration, en SVG (arcs exacts, tissus à l'échelle réelle, fils des coutures). */
 export function BlockSvg({ block, coloringIndex, fillOf = defaultFillOf }: { block: BlockItem; coloringIndex?: number; fillOf?: FillOf }) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const segments = easyDrawSegments(block.drawing) ?? [];
+  const content = contentOfDrawing(block.drawing, block.width, block.height);
+  const segments = content.lines;
   const index = coloringIndex ?? (block.colorings.length > 0 ? 1 : 0);
   const coloring = index > 0 ? block.colorings[index - 1] : undefined;
-  const pieces = coloring ? (piecesOfDrawing(block.drawing, block.width, block.height) ?? []) : [];
+  const pieces = coloring ? content.pieces : [];
   const unit = Math.max(block.width, block.height);
   const seam = coloring ? "#24262b" : "currentColor"; // coutures foncées sur un bloc coloré, quel que soit le thème
   const threads = coloring?.threads && Object.keys(coloring.threads).length > 0 ? coloring.threads : null;
@@ -65,6 +65,9 @@ export function BlockSvg({ block, coloringIndex, fillOf = defaultFillOf }: { blo
       )}
       <rect x="0" y="0" width={block.width} height={block.height} fill="var(--sheet)" />
       {shapes}
+      {content.strands.map((st) => (
+        <path key={st.key} d={st.segments.map((seg, i) => (i === 0 ? svgPathOf(seg) : svgPathOf(seg).replace(/^M[^LA]*/, ""))).join("")} fill="none" stroke={seam} strokeWidth={unit / 90} strokeLinecap="round" />
+      ))}
       {threads ? (
         sectionsOf(pieces).map((s) => {
           const t = threads[s.key];
@@ -150,8 +153,7 @@ export function Thumb({ list, item, size, coloringIndex, fillOf }: ThumbProps) {
     }
   }
   if ((list === "blocks" || list === "motifs" || list === "stencils") && "colorings" in item) {
-    const segments = easyDrawSegments(item.drawing);
-    if (segments) {
+    if (partsOfDrawing(item.drawing)) {
       return (
         <span className="thumb thumb--block" style={style} aria-hidden="true">
           <BlockSvg block={item} {...(coloringIndex === undefined ? {} : { coloringIndex })} {...(fillOf ? { fillOf } : {})} />

@@ -4,6 +4,7 @@
 
 import type { Id, JsonValue, Paint, Project, QuiltItem, BlockPlacement } from "../project/model";
 import { BLOCK_LISTS, createId, findBlock } from "../project/model";
+import { DEFAULT_TEXT, MAX_TEXT_CHARS, MAX_TEXT_SIZE, MIN_TEXT_SIZE, type TextAlign, type TextSpec } from "../text/glyphs";
 import {
   BORDER_SIDES,
   BORDER_STYLES,
@@ -48,6 +49,8 @@ export interface FreeItem {
   angle: number;
   skew: number;
   clip: Clip;
+  /** Texte en applique (calque 2) : `blockId` est alors vide, et le bloc est tiré des glyphes de la police. */
+  text?: TextSpec;
 }
 
 export interface QuiltDoc {
@@ -95,6 +98,19 @@ function parseLayout(v: unknown): LayoutParams | null {
   return clampLayout(merged as unknown as LayoutParams, 100);
 }
 
+function parseText(v: unknown): TextSpec | undefined {
+  if (!isRec(v)) return undefined;
+  const align: TextAlign = v.align === "center" || v.align === "right" ? v.align : "left";
+  return {
+    text: str(v.text).slice(0, MAX_TEXT_CHARS),
+    family: str(v.family).slice(0, 100) || DEFAULT_TEXT.family,
+    bold: v.bold === true,
+    italic: v.italic === true,
+    align,
+    size: Math.max(MIN_TEXT_SIZE, Math.min(MAX_TEXT_SIZE, num(v.size, DEFAULT_TEXT.size))),
+  };
+}
+
 /** Relit les bordures ; un fichier sans bordures (avant M6) n'en a pas. */
 function parseBorders(v: unknown): Border[] {
   if (!Array.isArray(v)) return [];
@@ -128,7 +144,8 @@ export function parseDoc(value: JsonValue): QuiltDoc | null {
   if (Array.isArray(value.items)) {
     for (const i of value.items) {
       if (!isRec(i) || typeof i.id !== "string" || typeof i.blockId !== "string") continue;
-      const layer = i.layer === 2 || i.layer === 3 ? i.layer : 1;
+      const text = parseText(i.text);
+      const layer = text ? 2 : i.layer === 2 || i.layer === 3 ? i.layer : 1;
       items.push({
         id: i.id,
         layer,
@@ -143,6 +160,7 @@ export function parseDoc(value: JsonValue): QuiltDoc | null {
         angle: num(i.angle, 0),
         skew: Math.max(-80, Math.min(80, num(i.skew, 0))),
         clip: i.clip === "border" || i.clip === "none" ? i.clip : "edge",
+        ...(text ? { text } : {}),
       });
     }
   }
@@ -179,7 +197,7 @@ export function placementsOf(project: Project, doc: QuiltDoc): BlockPlacement[] 
     out.push({ blockId: r.blockId, coloringId: r.coloringId });
   };
   for (const s of Object.values(doc.set)) add(s);
-  for (const i of doc.items) add(i);
+  for (const i of doc.items) if (!i.text) add(i);
   return out;
 }
 

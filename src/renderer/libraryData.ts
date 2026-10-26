@@ -1,7 +1,7 @@
 // Contenu des bibliothèques pour l'interface : la bibliothèque intégrée vue comme un carnet en lecture seule
 // (identifiants stables), le presse-papiers des bibliothèques et l'accès aux « Mes favoris ».
 
-import { LIBRARY_BLOCKS, builtLibraryBlock, libraryTree } from "../core/library/blocks";
+import { LIBRARY_ENTRIES, builtEntry, libraryEntryTree } from "../core/library/extra";
 import { LIBRARY_FABRICS, fabricLibraryTree, instantiateLibraryFabric } from "../core/library/fabrics";
 import { readFavorites, writeFavorites, type FavoriteKind, type FavoriteLibrary } from "../core/library/favorites";
 import { LIBRARY_THREADS, instantiateLibraryThread, threadLibraryTree } from "../core/library/threads";
@@ -25,12 +25,14 @@ export function builtinLibrary(kind: LibraryKind): { source: Source; tree: Built
   if (hit) return hit;
   const project = emptyProject();
   if (kind === "blocks") {
-    project.sketchbook.blocks = LIBRARY_BLOCKS.map((def): BlockItem => {
-      const b = builtLibraryBlock(def);
+    // La bibliothèque de blocs réunit blocs, motifs et pochoirs ; chacun arrive dans sa liste du carnet.
+    for (const def of LIBRARY_ENTRIES) {
+      const b = builtEntry(def);
       const card = { ...emptyNotecard(def.name), notes: def.notes, reference: `${LIBRARY_NAME} — ${def.category}`, back: { classification: def.style, categories: [def.category] } };
-      return { id: def.id, card, width: b.width, height: b.height, drawing: b.drawing, colorings: b.colorings };
-    });
-    hit = { source: { project, assets: new Map() }, tree: libraryTree().map((c) => ({ category: c.category, styles: c.styles.map((s) => ({ style: s.style, ids: s.blocks.map((b) => b.id) })) })) };
+      const item: BlockItem = { id: def.id, card, width: def.width, height: def.height, drawing: b.drawing, colorings: b.colorings };
+      project.sketchbook[def.list].push(item);
+    }
+    hit = { source: { project, assets: new Map() }, tree: libraryEntryTree().map((c) => ({ category: c.category, styles: c.styles.map((s) => ({ style: s.style, ids: s.entries.map((e) => e.id) })) })) };
   } else if (kind === "fabrics") {
     project.sketchbook.fabrics = LIBRARY_FABRICS.map((def) => ({ ...instantiateLibraryFabric(def), id: def.id }));
     hit = { source: { project, assets: new Map() }, tree: fabricLibraryTree().map((c) => ({ category: c.category, styles: c.styles.map((s) => ({ style: s.style, ids: s.fabrics.map((f) => f.id) })) })) };
@@ -43,7 +45,14 @@ export function builtinLibrary(kind: LibraryKind): { source: Source; tree: Built
 }
 
 export function itemsOf(source: Source, kind: LibraryKind): AnyItem[] {
+  if (kind === "blocks") return [...source.project.sketchbook.blocks, ...source.project.sketchbook.motifs, ...source.project.sketchbook.stencils];
   return source.project.sketchbook[kind] as AnyItem[];
+}
+
+/** La liste du carnet (blocs, motifs, pochoirs) qui contient un élément de bibliothèque de blocs. */
+export function blockListOf(source: Source, id: Id): "blocks" | "motifs" | "stencils" {
+  const sk = source.project.sketchbook;
+  return sk.motifs.some((b) => b.id === id) ? "motifs" : sk.stencils.some((b) => b.id === id) ? "stencils" : "blocks";
 }
 
 /** Presse-papiers des bibliothèques (Copier, puis Coller dans un style de Mes favoris) ; il survit à la fermeture. */

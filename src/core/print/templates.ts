@@ -7,7 +7,7 @@ import type { Pt } from "../draw/geometry";
 import { applyMat, multiply, rotation, translation, type Mat } from "../quilt/geom";
 import { boundaryPath, linePath, polyPath, transformSegments, type Item, type Page } from "./display";
 import { BLACK, flowBoxes, keyBlock, lineWidth, pagesOf, sizeText, withFooters, type PackBox, type PrintContext } from "./kit";
-import { seamOffset } from "./offset";
+import { seamInset, seamOffset } from "./offset";
 import { printableArea, tileContent } from "./paper";
 import { classifyPieces, lettersByKey, type PieceClass } from "./shapes";
 import type { PrintBlock } from "./source";
@@ -80,6 +80,8 @@ export function templateBox(cls: PieceClass, block: PrintBlock, ctx: PrintContex
   const poly = piece.polygon.map((p) => applyMat(r, p));
   const withSeam = o.printSeam && o.seam > 0;
   const cut = withSeam ? seamOffset(poly, o.seam) : poly;
+  const holeSewing = (piece.holes ?? []).map((h) => transformSegments(h, r));
+  const holeCuts = (piece.holePolygons ?? []).map((h) => h.map((p) => applyMat(r, p))).map((h) => (withSeam ? seamInset(h, o.seam) : h));
   const b = boxOf(cut);
   const shift = translation(PAD - b.x0, PAD - b.y0);
   const w = b.x1 - b.x0 + 2 * PAD;
@@ -88,6 +90,8 @@ export function templateBox(cls: PieceClass, block: PrintBlock, ctx: PrintContex
   const items: Item[] = [];
   if (withSeam) items.push({ kind: "path", d: polyPath(cut), stroke: { rgb: BLACK, width: lw, join: "miter" } });
   items.push({ kind: "path", d: boundaryPath(sewing), stroke: withSeam ? { rgb: BLACK, width: lw, dash: [4, 3] } : { rgb: BLACK, width: lw, join: "miter" } });
+  for (const hole of holeSewing) items.push({ kind: "path", d: boundaryPath(hole), stroke: withSeam ? { rgb: BLACK, width: lw, dash: [4, 3] } : { rgb: BLACK, width: lw, join: "miter" } });
+  if (withSeam) for (const hole of holeCuts) if (hole) items.push({ kind: "path", d: polyPath(hole), stroke: { rgb: BLACK, width: lw, join: "miter" } });
   // Lettre, nombre à couper et nom du bloc, au point intérieur.
   const inner = applyMat(r, c);
   const total = cls.pieces.length;

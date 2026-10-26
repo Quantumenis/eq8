@@ -40,6 +40,9 @@ export interface Piece {
   polygon: Pt[];
   /** Clés des pièces qui partagent une arête avec celle-ci. */
   neighbors: string[];
+  /** Trous (texte, applique) : contours fermés de sens inverse, et leur aplati. Absents pour une pièce sans trou. */
+  holes?: Segment[][];
+  holePolygons?: Pt[][];
 }
 
 export interface PieceAnalysis {
@@ -143,7 +146,7 @@ function greenTerm(seg: Segment): number {
 }
 
 /** Aire signée et centre de gravité exacts d'un contour fait de droites et d'arcs de cercle. */
-function areaAndCentroid(boundary: readonly Segment[]): { area: number; centroid: Pt } {
+export function areaAndCentroid(boundary: readonly Segment[]): { area: number; centroid: Pt } {
   let area = 0;
   let mx = 0;
   let my = 0;
@@ -173,7 +176,7 @@ function areaAndCentroid(boundary: readonly Segment[]): { area: number; centroid
   return { area, centroid };
 }
 
-function flatten(boundary: readonly Segment[]): Pt[] {
+export function flatten(boundary: readonly Segment[]): Pt[] {
   const out: Pt[] = [];
   for (const seg of boundary) {
     out.push(seg.a);
@@ -200,7 +203,7 @@ export function segmentText(seg: Segment): string {
 }
 
 /** Contour remis dans un ordre canonique (rotation de plus petite écriture) et clé tirée de cette écriture. */
-function canonical(boundary: Segment[]): { boundary: Segment[]; key: string } {
+export function canonical(boundary: Segment[]): { boundary: Segment[]; key: string } {
   const tokens = boundary.map(edgeToken);
   let best = 0;
   let bestText = tokens.join(";");
@@ -489,6 +492,7 @@ export function pieceAt(pieces: readonly Piece[], p: Pt): Piece | null {
     const b = piece.bounds;
     if (p.x < b.x0 || p.x > b.x1 || p.y < b.y0 || p.y > b.y1) continue;
     if (!insidePolygon(piece.polygon, p)) continue;
+    if (piece.holePolygons?.some((h) => insidePolygon(h, p))) continue;
     if (!best || piece.area < best.area) best = piece;
   }
   return best;
@@ -496,15 +500,17 @@ export function pieceAt(pieces: readonly Piece[], p: Pt): Piece | null {
 
 /** Un point bien à l'intérieur de la pièce (pour cliquer dessus) : le centre de gravité s'il y est, sinon un point voisin. */
 export function interiorPoint(piece: Piece): Pt {
-  if (insidePolygon(piece.polygon, piece.centroid)) return piece.centroid;
-  // Pièce concave : on balaie l'horizontale du centre de gravité et on prend le milieu du plus long intervalle intérieur.
+  const inHole = (p: Pt) => piece.holePolygons?.some((h) => insidePolygon(h, p)) ?? false;
+  if (insidePolygon(piece.polygon, piece.centroid) && !inHole(piece.centroid)) return piece.centroid;
+  // Pièce concave ou trouée : on balaie l'horizontale du centre de gravité et on prend le milieu du plus long intervalle intérieur.
   const y = piece.centroid.y;
   const xs: number[] = [];
-  const poly = piece.polygon;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i] as Pt;
-    const b = poly[j] as Pt;
-    if (a.y > y !== b.y > y) xs.push(((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x);
+  for (const poly of [piece.polygon, ...(piece.holePolygons ?? [])]) {
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i] as Pt;
+      const b = poly[j] as Pt;
+      if (a.y > y !== b.y > y) xs.push(((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x);
+    }
   }
   xs.sort((p, q) => p - q);
   let best = { x: piece.centroid.x, y, w: -1 };
@@ -515,18 +521,66 @@ export function interiorPoint(piece: Piece): Pt {
   return { x: best.x, y: best.y };
 }
 
-/** Tracé SVG (attribut `d`) du contour d'une pièce, arcs exacts. */
-export function piecePath(piece: Pick<Piece, "boundary">): string {
+/** Tracé SVG (attribut `d`) du contour d'une pièce, arcs exacts. Les trous suivent, de sens inverse. */
+export function piecePath(piece: Pick<Piece, "boundary" | "holes">): string {
   const f = (v: number) => String(Math.round(v * 1e6) / 1e6);
-  const first = piece.boundary[0];
-  if (!first) return "";
-  let d = `M${f(first.a.x)} ${f(first.a.y)}`;
-  for (const seg of piece.boundary) {
-    if (seg.kind === "line") d += `L${f(seg.b.x)} ${f(seg.b.y)}`;
-    else {
-      const g = arcGeometry(seg.a, seg.b, seg.sagitta);
-      d += `A${f(g.radius)} ${f(g.radius)} 0 ${Math.abs(g.sweep) > Math.PI ? 1 : 0} ${g.sweep > 0 ? 1 : 0} ${f(seg.b.x)} ${f(seg.b.y)}`;
+  const loop = (boundary: readonly Segment[]): string => {
+    const first = boundary[0];
+    if (!first) return "";
+    let d = `M${f(first.a.x)} ${f(first.a.y)}`;
+    for (const seg of boundary) {
+      if (seg.kind === "line") d += `L${f(seg.b.x)} ${f(seg.b.y)}`;
+      else {
+        const g = arcGeometry(seg.a, seg.b, seg.sagitta);
+        d += `A${f(g.radius)} ${f(g.radius)} 0 ${Math.abs(g.sweep) > Math.PI ? 1 : 0} ${g.sweep > 0 ? 1 : 0} ${f(seg.b.x)} ${f(seg.b.y)}`;
+      }
     }
+    return `${d}Z`;
+  };
+  return [loop(piece.boundary), ...(piece.holes ?? []).map(loop)].join("");
+}
+
+/** Contour inversé (sens opposé, arcs compris) : sert aux trous. */
+export function reverseBoundary(boundary: readonly Segment[]): Segment[] {
+  return [...boundary].reverse().map((s) =>
+    s.kind === "line" ? { id: s.id, kind: "line" as const, a: s.b, b: s.a } : { id: s.id, kind: "arc" as const, a: s.b, b: s.a, sagitta: -s.sagitta },
+  );
+}
+
+/**
+ * Une pièce à partir d'un contour fermé (applique, PolyDraw, texte) : orientation directe, clé tirée de la géométrie
+ * (`prefix` la distingue des pièces EasyDraw). `holes` sont des contours fermés intérieurs, quel que soit leur sens.
+ */
+export function pieceFromBoundary(boundary: readonly Segment[], prefix = "p", holes: readonly (readonly Segment[])[] = []): Piece | null {
+  if (boundary.length < 1) return null;
+  let outer = [...boundary];
+  let { area } = areaAndCentroid(outer);
+  if (Math.abs(area) < 1e-10) return null;
+  if (area < 0) {
+    outer = reverseBoundary(outer);
+    area = -area;
   }
-  return `${d}Z`;
+  const keyed = canonical(outer);
+  const rest = areaAndCentroid(keyed.boundary);
+  const inner = holes
+    .map((h) => {
+      const a = areaAndCentroid(h).area;
+      return a > 0 ? reverseBoundary(h) : [...h];
+    })
+    .filter((h) => h.length > 0);
+  const holeArea = inner.reduce((sum, h) => sum + Math.abs(areaAndCentroid(h).area), 0);
+  const piece: Piece = {
+    key: prefix === "p" ? keyed.key : `${prefix}${keyed.key.slice(1)}`,
+    boundary: keyed.boundary,
+    area: rest.area - holeArea,
+    centroid: rest.centroid,
+    bounds: unionBounds(keyed.boundary.map(boundsOf)) as Rect,
+    polygon: flatten(keyed.boundary),
+    neighbors: [],
+  };
+  if (inner.length > 0) {
+    piece.holes = inner;
+    piece.holePolygons = inner.map(flatten);
+  }
+  return piece;
 }

@@ -34,3 +34,20 @@ export function seamOffset(poly: readonly Pt[], margin: number, miterLimit = MIT
   }
   return best;
 }
+
+/** La ligne de coupe d'un trou : le trou rétréci de `margin` (le tissu de la marge avance dans le trou). `null` s'il disparaît. */
+export function seamInset(poly: readonly Pt[], margin: number, miterLimit = MITER_LIMIT): Pt[] | null {
+  if (margin <= 0 || poly.length < 3) return [...poly];
+  const out = inflatePathsD([poly.map((p) => ({ x: p.x, y: p.y }))] as PathD[], -margin, JoinType.Miter, EndType.Polygon, miterLimit, 7);
+  let best: Pt[] | null = null;
+  let bestArea = 1e-6;
+  for (const path of out) {
+    const pts = path.map((p) => ({ x: p.x, y: p.y }));
+    const area = Math.abs(signedAreaOf(pts));
+    if (area > bestArea) {
+      best = pts;
+      bestArea = area;
+    }
+  }
+  return best;
+}

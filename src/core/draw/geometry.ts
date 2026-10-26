@@ -40,6 +40,13 @@ export const clean = (v: number): number => {
 };
 export const cleanPt = (p: Pt): Pt => ({ x: clean(p.x), y: clean(p.y) });
 
+/** Le segment avec ses coordonnées arrondies à 10⁻⁹ po (sans le bruit des calculs flottants). */
+export function cleanSegment(s: Segment): Segment {
+  return s.kind === "line"
+    ? { id: s.id, kind: "line", a: cleanPt(s.a), b: cleanPt(s.b) }
+    : { id: s.id, kind: "arc", a: cleanPt(s.a), b: cleanPt(s.b), sagitta: clean(s.sagitta) };
+}
+
 export interface ArcGeometry {
   center: Pt;
   radius: number;
